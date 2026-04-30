@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genoa.dev/v1/schemas/capability.v1.json",
+  "title": "genoa Capability Declaration v1",
+  "description": "Schema for a single agent capability declaration. Extends the MCP tool/list tool object shape (https://modelcontextprotocol.io/specification/2025-11-05/server/tools) with a required 'provenance' field and optional 'trust' field. The core 'name', 'description', and 'inputSchema' fields are MCP-compatible — a genoa capability SHOULD be invocable via the MCP tools/call method if the runtime is 'mcp-server'.",
+  "type": "object",
+  "required": ["name", "description", "inputSchema", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Tool/capability name. MUST be unique within the image's capability list. MCP-compatible: used as the tool name in tools/call.",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "maxLength": 64,
+      "examples": ["execute_shell_command"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Human and LM-readable description of what this capability does and its contract. MCP-compatible: used by LMs for tool selection.",
+      "maxLength": 1024,
+      "examples": ["Execute a shell command on the host and return stdout/stderr. Restricted to /bin and /usr/bin by SELinux policy."]
+    },
+    "inputSchema": {
+      "type": "object",
+      "description": "JSON Schema (Draft 7 for MCP compatibility) describing the tool's input parameters. MCP-compatible: passed verbatim to the LM for parameter planning.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "object"
+        },
+        "properties": {
+          "type": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Provenance declaration for this capability. Agents use this to decide how much to trust the capability. This field is the genoa extension — not present in MCP spec.",
+      "required": ["source", "trust"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Origin of this capability. 'built-in' means shipped with the base image. 'installed' means added post-build. 'plugin' means loaded from a plugin bundle.",
+          "enum": ["built-in", "installed", "plugin"],
+          "examples": ["built-in"]
+        },
+        "trust": {
+          "type": "string",
+          "description": "Trust level declaration. 'attested' = covered by image attestation. 'signed' = has package signature but not in attestation. 'unverified' = no cryptographic claim. Agents MUST surface 'unverified' to end users before invocation.",
+          "enum": ["attested", "signed", "unverified"],
+          "examples": ["attested"]
+        },
+        "package_id": {
+          "type": "string",
+          "description": "Package identifier in the image's SPDX SBOM (SPDXID). Enables cross-referencing capability to SBOM entry.",
+          "examples": ["SPDXRef-shell-executor-1.0.0"]
+        },
+        "attestation_ref": {
+          "type": "string",
+          "description": "Index or URI reference to the capability_claim entry in the image's attestation document.",
+          "examples": ["0"]
+        },
+        "added_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when this capability was added. For 'built-in', equals image build_timestamp.",
+          "examples": ["2026-04-30T12:00:00Z"]
+        },
+        "added_by": {
+          "type": "string",
+          "description": "Actor that added this capability. For 'built-in', the build pipeline identity. For 'installed', the actor who ran the installer.",
+          "examples": ["https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"]
+        }
+      }
+    },
+    "annotations": {
+      "type": "object",
+      "description": "Arbitrary key-value metadata for this capability. Follows OCI annotation key naming convention (reverse-DNS).",
+      "additionalProperties": {"type": "string"},
+      "examples": [
+        {
+          "dev.genoa.capability.category": "shell",
+          "dev.genoa.capability.risk_level": "high"
+        }
+      ]
+    },
+    "deprecated": {
+      "type": "boolean",
+      "description": "If true, this capability is deprecated. LMs SHOULD prefer alternatives.",
+      "default": false
+    },
+    "alternatives": {
+      "type": "array",
+      "description": "Names of alternative capabilities to use instead. Populated when deprecated=true.",
+      "items": {"type": "string"}
+    }
+  },
+  "examples": [
+    {
+      "name": "execute_shell_command",
+      "description": "Execute a shell command on the host and return stdout/stderr. Restricted to /bin and /usr/bin by pledge policy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute."
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 30
+          }
+        },
+        "required": ["command"]
+      },
+      "provenance": {
+        "source": "built-in",
+        "trust": "attested",
+        "package_id": "SPDXRef-shell-executor-1.0.0",
+        "added_at": "2026-04-30T12:00:00Z",
+        "added_by": "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"
+      },
+      "annotations": {
+        "dev.genoa.capability.category": "shell",
+        "dev.genoa.capability.risk_level": "high"
+      }
+    }
+  ]
+}

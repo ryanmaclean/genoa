@@ -1,0 +1,59 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicateType": "https://genoa.dev/image-build/v1",
+  "subject": [
+    {
+      "name": "qcow2",
+      "digest": {
+        "sha256": "6d2538ff753887251d18d568b66e284e7d22ff9f5ba2bf0f7e40dbd2afcc314a"
+      }
+    }
+  ],
+  "predicate": {
+    "buildType": "https://genoa.dev/image-build/v1",
+    "builder": {
+      "id": "genoa-cli/v0.1.0",
+      "version": "0.1.0",
+      "environment": {
+        "nu_version": "0.111.0",
+        "platform": "macos"
+      }
+    },
+    "buildConfig": {
+      "manifest_hash": "sha256:6d2538ff753887251d18d568b66e284e7d22ff9f5ba2bf0f7e40dbd2afcc314a",
+      "osbuild_manifest_hash": "sha256:a17e4d24544300d176bc08dfdaf003c852bb185935c4d5650d5a1daa1c5711d4",
+      "cloud_init_seed_hash": "sha256:7d987bf30612eb5915b76ee95ed4039a26b9f1bf12fef2352d1a2d5a61627370",
+      "sbom_hash": "sha256:d8c3873c6e49e95d06cd8951639fbf55adadcd3c64f6203ce1c111f5c9a99099",
+      "template_hash": "sha256:2cac4349728f067e2de9821068d7e2164fbc6f5e7ed27ae782d730c574e0879c"
+    },
+    "metadata": {
+      "buildStartedOn": "2026-04-30T14:15:58Z",
+      "buildFinishedOn": "2026-04-30T14:15:58Z",
+      "reproducible": false,
+      "completeness": {
+        "parameters": true,
+        "environment": true,
+        "materials": true
+      }
+    },
+    "materials": [
+      {
+        "uri": "genoa://manifest/ai-assistant-edge-v1",
+        "digest": {
+          "sha256": "6d2538ff753887251d18d568b66e284e7d22ff9f5ba2bf0f7e40dbd2afcc314a"
+        },
+        "mediaType": "application/toml"
+      }
+    ],
+    "trust": {
+      "level": "self-signed",
+      "signed_by": "",
+      "policy": "genoa/self-build/v1"
+    },
+    "sbom": {
+      "format": "spdx-json",
+      "uri": "/Users/studio/genoa/option-b-cloudinit/dist/ai-assistant-edge-v1-qcow2/sbom.spdx.json",
+      "placeholder": true
+    }
+  }
+}

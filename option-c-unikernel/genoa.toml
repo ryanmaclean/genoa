@@ -1,0 +1,30 @@
+# genoa.toml — baked into the kernel image at build time via genoa-config/build.rs
+# Schema: schema/manifest.v1.json
+schema_version = "1"
+
+[identity]
+agent_id   = "genoa-c-demo-01"
+# Ed25519 public key (hex) — stub for demo; replace with real key material
+attestation_pubkey = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+
+[network]
+# DHCP is attempted first; static_ip is fallback if DHCP fails within timeout_ms
+dhcp           = true
+static_ip      = "10.0.2.15"
+static_netmask = "255.255.255.0"
+static_gateway = "10.0.2.2"
+dhcp_timeout_ms = 5000
+
+[tasks]
+endpoint       = "https://genoa.example.com/v1/tasks/next"
+result_endpoint = "https://genoa.example.com/v1/tasks/result"
+poll_interval_ms = 2000
+max_retries    = 5
+
+[tls]
+# PEM bundle embedded at build time (stub — real deployment uses a trust anchor crate)
+ca_bundle_path = "tls/ca-bundle.pem"
+
+[attestation]
+# /v1/status response is signed with the agent's Ed25519 key
+sign_responses = true

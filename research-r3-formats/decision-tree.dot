@@ -1,0 +1,62 @@
+digraph genoa_deploy_decision {
+  rankdir=TD;
+  node [shape=box, style=rounded, fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=10];
+
+  // Entry point
+  START [label="genoa-deploy\n(provider, arch, os)", shape=ellipse, style=filled, fillcolor="#E8F4F8"];
+
+  // Provider class check
+  P_BAREMETAL [label="Is target bare-metal\nor SD card / local block device?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_FIRECRACKER [label="Is target Firecracker\nor Fly.io Machines?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_MACOS_ARM [label="Is target Apple Silicon\n(MacStadium, MacMini colo)?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_HAS_BYOI [label="Does provider have\nBYOI image import API?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_HAS_URL [label="Does provider accept\nsnapshot-from-URL?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_HAS_RESCUE [label="Does provider offer\nrescue boot mode?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_NEEDS_IMDS [label="Does target OS need\nprovider-specific IMDS\nor SSH key injection?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_HAS_CONSOLE [label="Does provider have\nvirtual console / ISO mount?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+
+  // Outcomes
+  O_BAREMENTAL [label="SPECIAL CASE:\ndd to block device\n(not a cloud deploy)", shape=box, style=filled, fillcolor="#C8E6C9"];
+  O_FIRECRACKER [label="OUT OF SCOPE:\nFirecracker does not run BSD kernels.\nWould require Linux kernel +\nBSD userland Frankenstein.\nNot implemented.", shape=box, style=filled, fillcolor="#FFCDD2"];
+  O_MACOS_ARM [label="Apple Silicon path:\n1. UTM/QEMU-system-aarch64 (not rescue-dd)\n2. VMware Fusion (VMDK)\n3. Parallels (no BSD support)\nBest: UTM with raw image directly.\nNot a 'deploy' — a 'provision local VM'.\nDocument separately.", shape=box, style=filled, fillcolor="#FFE0B2"];
+  O_PATH0 [label="PATH 0: BYOI Direct Upload\n(cleanest, fully automated)\nFormat: per-provider\nTool: provider CLI / SDK", shape=box, style=filled, fillcolor="#C8E6C9"];
+  O_PATH0_AWS [label="PATH 0 + AWS:\nbsdec2-image-upload (BSD-2-Clause)\nfor FreeBSD/NetBSD AMIs\nFormat: raw → S3 → EBS snapshot", shape=box, style=filled, fillcolor="#C8E6C9"];
+  O_PATH1 [label="PATH 1: Snapshot from URL\nRequires: genoa publish step\n(R2 / S3 / GitHub Releases)\nFormat: raw via HTTPS", shape=box, style=filled, fillcolor="#DCEDC8"];
+  O_PATH3 [label="PATH 3: Rescue + dd\nNo QEMU. No iPXE.\nFormat: raw (streamed via curl)\nRequires: genoa publish step", shape=box, style=filled, fillcolor="#FFF9C4"];
+  O_PATH4 [label="PATH 4: Rescue + chroot fixup\nAll of Path 3 +\nSSH key / hostname / IMDS shim inject\nRequired for providers with\nnon-standard IMDS or no IMDS", shape=box, style=filled, fillcolor="#FFE0B2"];
+  O_PATH2 [label="PATH 2: Console ISO mount\nMANUAL ONLY — not automated\nDocument as operator fallback", shape=box, style=filled, fillcolor="#E1BEE7"];
+  O_DEAD [label="NO PATH AVAILABLE:\nDocument provider as unsupported.\nRequest Path 0 API from provider.", shape=box, style=filled, fillcolor="#FFCDD2"];
+
+  // Graph edges
+  START -> P_BAREMETAL;
+
+  P_BAREMETAL -> O_BAREMENTAL [label="yes"];
+  P_BAREMETAL -> P_FIRECRACKER [label="no"];
+
+  P_FIRECRACKER -> O_FIRECRACKER [label="yes (Fly.io,\nFirecracker)"];
+  P_FIRECRACKER -> P_MACOS_ARM [label="no"];
+
+  P_MACOS_ARM -> O_MACOS_ARM [label="yes (MacStadium,\nMac colo)"];
+  P_MACOS_ARM -> P_HAS_BYOI [label="no"];
+
+  P_HAS_BYOI -> P_HAS_BYOI_AWS [label="yes (AWS)"];
+  P_HAS_BYOI -> O_PATH0 [label="yes (GCP, Azure,\nDO, Linode, OCI,\nScaleway)"];
+  P_HAS_BYOI -> P_HAS_URL [label="no"];
+
+  P_HAS_BYOI_AWS [label="Provider is AWS?", shape=diamond, fillcolor="#FFF9C4", style=filled];
+  P_HAS_BYOI_AWS -> O_PATH0_AWS [label="yes + FreeBSD/NetBSD"];
+  P_HAS_BYOI_AWS -> O_PATH0 [label="yes + other OS"];
+
+  P_HAS_URL -> O_PATH1 [label="yes (Vultr,\nExoscale, some DO)"];
+  P_HAS_URL -> P_HAS_RESCUE [label="no"];
+
+  P_HAS_RESCUE -> P_NEEDS_IMDS [label="yes"];
+  P_HAS_RESCUE -> P_HAS_CONSOLE [label="no"];
+
+  P_NEEDS_IMDS -> O_PATH4 [label="yes — provider\nhas non-standard IMDS\nor no IMDS client\nin BSD agent yet"];
+  P_NEEDS_IMDS -> O_PATH3 [label="no — BSD agent\nhandles IMDS at boot,\nor DHCP+SSH keys pre-baked"];
+
+  P_HAS_CONSOLE -> O_PATH2 [label="yes (Hetzner GUI,\nIONOS, Contabo)"];
+  P_HAS_CONSOLE -> O_DEAD [label="no"];
+}

@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genoa.dev/schema/attestation/v1",
+  "title": "Genoa Image Build Attestation v1",
+  "description": "in-toto v1 Statement for genoa cloud-init image builds. predicateType: https://genoa.dev/image-build/v1",
+  "type": "object",
+  "required": ["_type", "predicateType", "subject", "predicate"],
+  "additionalProperties": false,
+  "properties": {
+    "_type": {
+      "type": "string",
+      "const": "https://in-toto.io/Statement/v1",
+      "description": "in-toto statement type — always this URI"
+    },
+    "predicateType": {
+      "type": "string",
+      "const": "https://genoa.dev/image-build/v1",
+      "description": "Genoa-specific predicate type URI"
+    },
+    "subject": {
+      "type": "array",
+      "description": "Output artifacts covered by this attestation",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "digest"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Artifact name (e.g. image filename or 'qcow2', 'ami')"
+          },
+          "digest": {
+            "type": "object",
+            "description": "Map of algorithm to hex digest",
+            "minProperties": 1,
+            "additionalProperties": { "type": "string" },
+            "properties": {
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "sha512": { "type": "string", "pattern": "^[a-f0-9]{128}$" }
+            }
+          }
+        }
+      }
+    },
+    "predicate": {
+      "type": "object",
+      "description": "Build provenance predicate",
+      "required": [
+        "buildType",
+        "builder",
+        "buildConfig",
+        "metadata",
+        "materials",
+        "trust"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "buildType": {
+          "type": "string",
+          "const": "https://genoa.dev/image-build/v1",
+          "description": "Build type URI matching predicateType"
+        },
+        "builder": {
+          "type": "object",
+          "required": ["id", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Builder identity (e.g. 'genoa-cli/v0.1.0')"
+            },
+            "version": {
+              "type": "string",
+              "description": "Genoa CLI version"
+            },
+            "environment": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Relevant build environment variables (no secrets)"
+            }
+          }
+        },
+        "buildConfig": {
+          "type": "object",
+          "required": ["manifest_hash", "osbuild_manifest_hash", "cloud_init_seed_hash"],
+          "additionalProperties": false,
+          "properties": {
+            "manifest_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "description": "sha256 of the genoa TOML manifest file"
+            },
+            "osbuild_manifest_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "description": "sha256 of the rendered osbuild JSON manifest"
+            },
+            "cloud_init_seed_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "description": "sha256 of the rendered cloud-init user-data"
+            },
+            "sbom_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "description": "sha256 of the SPDX/CycloneDX SBOM file"
+            },
+            "template_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "description": "sha256 of the cloud-init template used"
+            }
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "required": ["buildStartedOn", "buildFinishedOn", "completeness"],
+          "additionalProperties": false,
+          "properties": {
+            "buildStartedOn": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "buildFinishedOn": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reproducible": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether the build is bit-for-bit reproducible"
+            },
+            "completeness": {
+              "type": "object",
+              "required": ["parameters", "environment", "materials"],
+              "additionalProperties": false,
+              "properties": {
+                "parameters": { "type": "boolean" },
+                "environment": { "type": "boolean" },
+                "materials": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "materials": {
+          "type": "array",
+          "description": "Input materials consumed during the build",
+          "items": {
+            "type": "object",
+            "required": ["uri", "digest"],
+            "additionalProperties": false,
+            "properties": {
+              "uri": { "type": "string", "format": "uri" },
+              "digest": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              },
+              "mediaType": { "type": "string" }
+            }
+          }
+        },
+        "trust": {
+          "type": "object",
+          "description": "Explicit trust declarations — agents must check this, not assume",
+          "required": ["level", "signed_by", "policy"],
+          "additionalProperties": false,
+          "properties": {
+            "level": {
+              "type": "string",
+              "enum": ["untrusted", "self-signed", "team-signed", "ca-signed", "hardware-attested"],
+              "description": "Trust level of this attestation"
+            },
+            "signed_by": {
+              "type": "string",
+              "description": "cosign key reference or certificate fingerprint (empty string if unsigned)"
+            },
+            "policy": {
+              "type": "string",
+              "description": "Policy ID or URL that accepted this build"
+            },
+            "cosign_bundle": {
+              "type": "string",
+              "description": "Base64-encoded cosign bundle (Rekor log entry + signature)"
+            }
+          }
+        },
+        "sbom": {
+          "type": "object",
+          "description": "SBOM reference",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": ["spdx-json", "cyclonedx-json"],
+              "default": "spdx-json"
+            },
+            "uri": { "type": "string" },
+            "placeholder": {
+              "type": "boolean",
+              "description": "true if SBOM is a stub (syft not available at build time)"
+            }
+          }
+        }
+      }
+    }
+  }
+}

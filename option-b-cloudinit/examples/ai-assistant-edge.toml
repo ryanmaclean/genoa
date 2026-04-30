@@ -1,0 +1,147 @@
+# genoa manifest v1 — AI Assistant Edge Node
+# Target: Raspberry Pi 5 + AWS AMI dual-target
+# Stack: datadog-agent + ollama + ii-agent + ac-client
+#
+# Run: nu genoa.nu describe examples/ai-assistant-edge.toml
+#      nu genoa.nu build examples/ai-assistant-edge.toml --target pi --dry-run
+
+[genoa]
+schema_version = "v1"
+manifest_id    = "ai-assistant-edge-v1"
+created_at     = "2026-04-30T00:00:00Z"
+description    = "Edge AI assistant node: ollama + datadog-agent + ii-agent on Pi5 / AWS"
+
+[genoa.labels]
+env        = "edge"
+team       = "platform"
+managed-by = "genoa"
+project    = "ryanmaclean/genoa"
+
+# ─── Base image ────────────────────────────────────────────────────────────────
+[image]
+base     = "alpine-3.20"
+arch     = "aarch64"
+hostname = "ai-edge-01"
+locale   = "en_US.UTF-8"
+timezone = "America/Vancouver"
+
+# ─── AI stack ──────────────────────────────────────────────────────────────────
+[stack.datadog_agent]
+enabled           = true
+version           = "7"
+api_key_secret_ref = "DD_API_KEY"      # resolved from env var DD_API_KEY at build time
+site              = "datadoghq.com"
+tags              = ["env:edge", "team:platform", "managed-by:genoa", "host:ai-edge-01"]
+integrations      = ["ollama", "process", "network"]
+
+[stack.ollama]
+enabled = true
+version = "latest"
+models  = ["llama3.2:3b", "nomic-embed-text", "qwen2.5:0.5b"]
+host    = "0.0.0.0:11434"
+gpu     = "auto"
+
+[stack.ii_agent]
+enabled            = true
+version            = "latest"
+backend            = "anthropic"
+api_key_secret_ref = "ANTHROPIC_API_KEY"   # never inlined
+
+[stack.ac_client]
+enabled = true
+version = "latest"
+
+[stack]
+extra_packages = [
+  "htop",
+  "iotop",
+  "tcpdump",
+  "nmap",
+  "tmux",
+  "vim",
+  "python3-venv",
+  "nodejs",
+  "npm",
+]
+
+[[stack.extra_files]]
+path        = "/etc/genoa/stack.json"
+permissions = "644"
+owner       = "root:root"
+content     = '''
+{
+  "managed_by": "genoa",
+  "manifest_id": "ai-assistant-edge-v1",
+  "stack": ["datadog-agent", "ollama", "ii-agent", "ac-client"]
+}
+'''
+
+[[stack.extra_files]]
+path             = "/etc/ollama/modelfile-llama3"
+permissions      = "644"
+owner            = "ollama:ollama"
+content          = '''
+FROM llama3.2:3b
+SYSTEM "You are a helpful AI assistant running on an edge node managed by genoa."
+PARAMETER temperature 0.7
+PARAMETER num_ctx 4096
+'''
+
+# ─── Users ─────────────────────────────────────────────────────────────────────
+[[users]]
+name   = "ryan"
+gecos  = "Ryan MacLean"
+groups = ["sudo", "docker", "ollama"]
+shell  = "/bin/bash"
+sudo   = "ALL=(ALL) NOPASSWD:ALL"
+ssh_authorized_keys = [
+  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyReplaceMeWithRealKey ryan@example.com",
+]
+
+[[users]]
+name   = "deploy"
+gecos  = "Genoa Deploy Service Account"
+groups = ["docker"]
+shell  = "/bin/bash"
+sudo   = "ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *, /usr/bin/systemctl start *, /usr/bin/systemctl stop *"
+# SSH keys resolved at runtime from secret — not inlined
+ssh_keys_secret_ref = "DEPLOY_SSH_KEYS"
+
+# ─── Targets ───────────────────────────────────────────────────────────────────
+[targets.pi]
+enabled                 = true
+disk_size_gb            = 32
+output_path             = "dist/ai-assistant-edge-v1-pi5.img"
+compress                = true
+pi_model                = "pi5"
+boot_partition_size_mb  = 256
+
+[targets.qcow2]
+enabled      = true
+disk_size_gb = 20
+output_path  = "dist/ai-assistant-edge-v1.qcow2"
+compress     = true
+
+[targets.aws]
+enabled              = true
+disk_size_gb         = 20
+output_path          = "dist/ai-assistant-edge-v1.raw"
+region               = "us-west-2"
+ami_name             = "genoa-ai-assistant-edge-v1-{{timestamp}}"
+s3_bucket_secret_ref = "AWS_S3_BUCKET"
+virtualization_type  = "hvm"
+root_device_name     = "/dev/xvda"
+
+[targets.do]
+enabled                = false
+disk_size_gb           = 20
+region                 = "sfo3"
+spaces_bucket_secret_ref = "DO_SPACES_BUCKET"
+token_secret_ref         = "DO_API_TOKEN"
+
+# ─── Secret resolution ─────────────────────────────────────────────────────────
+[secrets]
+backend = "env"
+# At build time, genoa reads these from environment variables:
+#   DD_API_KEY, ANTHROPIC_API_KEY, DEPLOY_SSH_KEYS, AWS_S3_BUCKET
+# No secrets are ever stored in this file.

@@ -1,0 +1,31 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2026-04-30T14:15:58Z",
+    "creators": [
+      "Tool: genoa-0.1.0"
+    ]
+  },
+  "name": "genoa-ai-assistant-edge-v1",
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://genoa.dev/sbom/ai-assistant-edge-v1/6d2538ff753887251d18d568b66e284e7d22ff9f5ba2bf0f7e40dbd2afcc314a",
+  "placeholder": true,
+  "note": "Stub SBOM — run 'syft <image> -o spdx-json' for real SBOM (syft: Apache-2.0)",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-genoa-manifest",
+      "name": "ai-assistant-edge-v1",
+      "versionInfo": "1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "genoa-manifest-hash",
+          "referenceLocator": "sha256:6d2538ff753887251d18d568b66e284e7d22ff9f5ba2bf0f7e40dbd2afcc314a"
+        }
+      ]
+    }
+  ]
+}

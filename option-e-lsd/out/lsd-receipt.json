@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "built_at": "2026-04-30T14:15:40Z",
+  "manifest_sha256": "2f56af3bbb0c9b154882ef759e652bc62334239993b289e8bdc34e2327c7dfca",
+  "artifacts": [
+    {
+      "name": "bootstrap.sh",
+      "sha256": "8b7ab9d7ccc48b1d1edef21b2dd4fb226aa298b03bc2c3979c8cfa1fe18ce37e",
+      "size_bytes": 11263,
+      "role": "bootstrap-script"
+    },
+    {
+      "name": "bsdinstall.script",
+      "sha256": "b0e03491a98fb3c534a8b33f64e9aee56ee96587eb09abbee7e5300493fcbf9f",
+      "size_bytes": 5532,
+      "role": "bsdinstall-script"
+    },
+    {
+      "name": "manifest.toml",
+      "sha256": "2f56af3bbb0c9b154882ef759e652bc62334239993b289e8bdc34e2327c7dfca",
+      "size_bytes": 1804,
+      "role": "manifest-copy"
+    }
+  ],
+  "tool": {
+    "name": "lsd",
+    "version": "0.1.0",
+    "commit": "unknown"
+  },
+  "signing": {
+    "method": "none"
+  },
+  "trust_level": "unsigned",
+  "warnings": [
+    "trust.mfs_image_sha256 is a placeholder (all zeros) — replace with real digest before production use"
+  ]
+}

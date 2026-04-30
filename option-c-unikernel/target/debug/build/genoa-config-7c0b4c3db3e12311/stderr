@@ -1,0 +1,3 @@
+build.rs: manifest hash = 5ae2fc9fcc8f29aa3c4f83de3fcc424e9bd020e8bcd7b9bd0eee26259c0eae9d
+build.rs: agent_id      = genoa-c-demo-01
+build.rs: task_endpoint = https://genoa.example.com/v1/tasks/next

@@ -1,0 +1,32 @@
+[package]
+name    = "genoa-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+genoa-config = { path = "../genoa-config" }
+
+# Network stack — 0BSD
+smoltcp = { workspace = true }
+
+# TLS — Apache-2.0 / MIT / ISC
+# rustls 0.23 no_std: use default-features = false, ring backend.
+# The "alloc" feature flag does not exist in this version; no_std
+# support is implicit when default-features = false.
+rustls = { workspace = true }
+
+# JSON — MIT OR Apache-2.0
+serde      = { workspace = true }
+serde_json = { workspace = true }
+
+# SHA-2 for attestation — MIT OR Apache-2.0
+sha2 = { workspace = true }
+hex  = { workspace = true }
+
+[features]
+# When "std" is NOT enabled the crate builds no_std + alloc (for unikernel).
+# When "std" IS enabled (e.g. cargo check on host) we add std-based stubs
+# so the code typechecks without a Hermit sysroot.
+default = ["std"]
+std = []

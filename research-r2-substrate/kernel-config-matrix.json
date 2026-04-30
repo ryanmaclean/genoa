@@ -1,0 +1,625 @@
+{
+  "$schema": "https://genoa.internal/schemas/kernel-config-matrix/v1",
+  "generated": "2026-04-30",
+  "researcher": "R2",
+  "notes": [
+    "Driver names use OS-native identifiers (FreeBSD 'device X', NetBSD 'pseudo-device X', etc.).",
+    "hypervisor_coverage lists which hypervisors the driver/option satisfies.",
+    "arch_support lists which architectures the driver compiles on for that OS.",
+    "Confidence: HIGH = in GENERIC or documented in official release notes. MEDIUM = confirmed via man page or upstream driver README. LOW = inferred from architecture or partial documentation."
+  ],
+
+  "os_matrix": {
+
+    "freebsd_15_amd64": {
+      "os": "FreeBSD 15",
+      "arch": "amd64",
+      "base_config": "GENERIC",
+      "proposed_config_name": "GENOA-amd64",
+      "strategy": "Start from GENERIC, add cloud NICs + Xen PVH + ENA + gve; strip sound, BT, ISA legacy.",
+      "kernel_options": [
+        {
+          "entry": "options XENHVM",
+          "type": "options",
+          "purpose": "Xen HVM and PVH paravirt support (requires xenpci device)",
+          "hypervisor_coverage": ["xen_hvm", "xen_pvh"],
+          "arch_support": ["amd64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config; xenproject.org FreeBSD PVH wiki"
+        },
+        {
+          "entry": "options COMPAT_LINUXKPI",
+          "type": "options",
+          "purpose": "Linux KPI shim required by many cloud drivers (gve, etc.)",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "cloud_hypervisor"],
+          "arch_support": ["amd64", "aarch64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        }
+      ],
+      "devices": [
+        {
+          "entry": "device virtio",
+          "type": "device",
+          "purpose": "VirtIO core infrastructure",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "vmm_vmd", "firecracker", "cloud_hypervisor", "kata_containers", "apple_hvf", "xen_hvm"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "armv7", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device virtio_pci",
+          "type": "device",
+          "purpose": "VirtIO over PCI bus attachment",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "vmm_vmd", "cloud_hypervisor", "xen_hvm"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "armv7", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device vtnet",
+          "type": "device",
+          "purpose": "VirtIO network interface (vtnet = virtio-net)",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "vmm_vmd", "cloud_hypervisor", "xen_hvm", "apple_hvf", "firecracker"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "armv7", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config; device vtnet = virtio_blk"
+        },
+        {
+          "entry": "device virtio_blk",
+          "type": "device",
+          "purpose": "VirtIO block storage",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "cloud_hypervisor", "xen_hvm", "apple_hvf", "firecracker"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "armv7", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device virtio_scsi",
+          "type": "device",
+          "purpose": "VirtIO SCSI adapter (higher throughput than blk for many disks)",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "cloud_hypervisor"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device virtio_balloon",
+          "type": "device",
+          "purpose": "VirtIO memory balloon (host can reclaim guest memory)",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "armv7", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device virtio_console",
+          "type": "device",
+          "purpose": "VirtIO serial console",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "cloud_hypervisor"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "armv7", "i386"],
+          "confidence": "MEDIUM",
+          "source": "Implied by virtio standard; present in many cloud images"
+        },
+        {
+          "entry": "device kvm_clock",
+          "type": "device",
+          "purpose": "KVM paravirt clock (accurate time under KVM; x86 only)",
+          "hypervisor_coverage": ["kvm"],
+          "arch_support": ["amd64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device hyperv",
+          "type": "device",
+          "purpose": "Hyper-V VMBus root driver; enables hv_netvsc, hv_storvsc, hv_utils",
+          "hypervisor_coverage": ["hyper_v", "wsl2"],
+          "arch_support": ["amd64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config; man hv_vmbus(4) — appeared FreeBSD 10.0; 'device hyperv' compiles in hv_vmbus + dependents"
+        },
+        {
+          "entry": "device xenpci",
+          "type": "device",
+          "purpose": "Xen PCI bus; required alongside XENHVM for Xen HVM/PVH guests",
+          "hypervisor_coverage": ["xen_hvm", "xen_pvh", "xen_pv"],
+          "arch_support": ["amd64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config (device xenpci)"
+        },
+        {
+          "entry": "device xenefi",
+          "type": "device",
+          "purpose": "Xen EFI support for PVH boot path",
+          "hypervisor_coverage": ["xen_pvh"],
+          "arch_support": ["amd64"],
+          "confidence": "MEDIUM",
+          "source": "FreeBSD GENERIC kernel config (device xenefi)"
+        },
+        {
+          "entry": "device xentimer",
+          "type": "device",
+          "purpose": "Xen paravirt timer",
+          "hypervisor_coverage": ["xen_hvm", "xen_pvh", "xen_pv"],
+          "arch_support": ["amd64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device pvscsi",
+          "type": "device",
+          "purpose": "VMware Paravirtual SCSI adapter (better than BusLogic emulation)",
+          "hypervisor_coverage": ["vmware_esxi"],
+          "arch_support": ["amd64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config (device pvscsi); VMware recommends pvscsi over BusLogic for FreeBSD"
+        },
+        {
+          "entry": "device vmx",
+          "type": "device",
+          "purpose": "VMware VMXNET3 network adapter (vmx(4))",
+          "hypervisor_coverage": ["vmware_esxi"],
+          "arch_support": ["amd64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config (device vmx = vmxnet3); 'vmx' not 'vmxnet3' in FreeBSD"
+        },
+        {
+          "entry": "device nvme",
+          "type": "device",
+          "purpose": "NVMe controller; required for AWS Nitro EBS volumes, GCP PD-SSD, Firecracker block",
+          "hypervisor_coverage": ["aws_nitro", "cloud_hypervisor", "firecracker", "qemu_tcg"],
+          "arch_support": ["amd64", "aarch64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config; AWS Nitro docs — EBS volumes appear as NVMe"
+        },
+        {
+          "entry": "device nvd",
+          "type": "device",
+          "purpose": "NVMe disk namespace (pairs with nvme)",
+          "hypervisor_coverage": ["aws_nitro", "cloud_hypervisor", "firecracker"],
+          "arch_support": ["amd64", "aarch64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device ahci",
+          "type": "device",
+          "purpose": "AHCI SATA controller; bhyve uses ahci-hd as storage backend option",
+          "hypervisor_coverage": ["bhyve", "qemu_tcg", "vmware_esxi"],
+          "arch_support": ["amd64", "aarch64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config; bhyve documentation"
+        },
+        {
+          "entry": "device if_ena (module: if_ena.ko)",
+          "type": "device",
+          "purpose": "Amazon ENA (Elastic Network Adapter) for AWS Nitro instances",
+          "hypervisor_coverage": ["aws_nitro"],
+          "arch_support": ["amd64", "aarch64"],
+          "confidence": "HIGH",
+          "source": "amzn/amzn-drivers GitHub README; FreeBSD 12+ and 13+ on both amd64 and aarch64"
+        },
+        {
+          "entry": "device gve (module: gve.ko)",
+          "type": "device",
+          "purpose": "Google gVNIC driver; required for GCP C3/C4/H3 and ARM instances",
+          "hypervisor_coverage": ["gcp_gvnic"],
+          "arch_support": ["amd64", "aarch64"],
+          "confidence": "HIGH",
+          "source": "GoogleCloudPlatform/compute-virtual-ethernet-freebsd README; gve(4) merged FreeBSD 14.0; aarch64 required for GCP ARM VMs"
+        },
+        {
+          "entry": "device vt",
+          "type": "device",
+          "purpose": "Virtual terminal (vt); kernel console for UEFI framebuffer and serial",
+          "hypervisor_coverage": ["all"],
+          "arch_support": ["amd64", "aarch64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device vt_efifb",
+          "type": "device",
+          "purpose": "UEFI framebuffer console (for providers that give framebuffer access)",
+          "hypervisor_coverage": ["qemu_tcg", "vmware_esxi", "hyper_v", "bhyve"],
+          "arch_support": ["amd64", "aarch64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device uart",
+          "type": "device",
+          "purpose": "Serial UART console; required for cloud serial console access on nearly all providers",
+          "hypervisor_coverage": ["all"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "armv7", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config; AWS/GCP/Azure all use serial for console logging"
+        },
+        {
+          "entry": "device crypto",
+          "type": "device",
+          "purpose": "Kernel crypto framework; required for TLS offload, IPsec",
+          "hypervisor_coverage": ["all"],
+          "arch_support": ["amd64", "aarch64", "riscv64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device aesni",
+          "type": "device",
+          "purpose": "AES-NI hardware acceleration; x86 only but improves TLS perf in cloud",
+          "hypervisor_coverage": ["kvm", "vmware_esxi", "hyper_v", "xen_hvm"],
+          "arch_support": ["amd64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device rdrand_rng",
+          "type": "device",
+          "purpose": "RDRAND entropy source (x86 RDRAND instruction); important in cloud where /dev/hwrng absent",
+          "hypervisor_coverage": ["kvm", "vmware_esxi", "hyper_v", "xen_hvm", "aws_nitro"],
+          "arch_support": ["amd64", "i386"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        },
+        {
+          "entry": "device virtio_random (viornd equivalent; module virtio_random.ko)",
+          "type": "device",
+          "purpose": "VirtIO RNG entropy device; important for guest entropy seeding",
+          "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "cloud_hypervisor"],
+          "arch_support": ["amd64", "aarch64", "riscv64"],
+          "confidence": "MEDIUM",
+          "source": "VirtIO spec; NetBSD docs confirm viornd importance for boot entropy"
+        },
+        {
+          "entry": "device netmap",
+          "type": "device",
+          "purpose": "High-performance packet I/O framework; default on amd64 GENERIC",
+          "hypervisor_coverage": ["kvm", "qemu_tcg"],
+          "arch_support": ["amd64"],
+          "confidence": "MEDIUM",
+          "source": "FreeBSD GENERIC kernel config; note: not default on aarch64 but available"
+        },
+        {
+          "entry": "device efidev",
+          "type": "device",
+          "purpose": "EFI runtime services access; needed for UEFI variable manipulation in VMs",
+          "hypervisor_coverage": ["all_uefi"],
+          "arch_support": ["amd64", "aarch64"],
+          "confidence": "HIGH",
+          "source": "FreeBSD GENERIC kernel config"
+        }
+      ],
+      "omit_from_genoa": [
+        {"entry": "device sound + snd_*", "reason": "No audio in cloud VMs"},
+        {"entry": "device wlan + wlan_* + ath + ipw + iwi + iwn + malo + mwl + ral + wpi", "reason": "No WiFi in hypervisors"},
+        {"entry": "device bluetooth + ng_hci + *", "reason": "No Bluetooth in VMs"},
+        {"entry": "device fdc", "reason": "Floppy disk; obsolete in VMs"},
+        {"entry": "device ppc + ppbus + lpt + ppi", "reason": "Parallel port; absent in VMs"},
+        {"entry": "device atkbdc + atkbd + psm", "reason": "AT keyboard/mouse; optional, use evdev instead"},
+        {"entry": "device bce + bfe + bge + cas + dc + et + fxp + gem + jme + lge + msk + nfe + nge + rl + sge + sis + sk + ste + stge + vge + vr + xl", "reason": "Physical-hardware-only NICs not present in any hypervisor"},
+        {"entry": "device ahc + ahd + hptiop + isp + mpt + sym + isci + ocs_fc", "reason": "Physical SAS/FC HBAs not present in VMs"},
+        {"entry": "device arcmsr + ciss + ips + smartpqi + tws + aac + aacp + aacraid + ida + mfi + mlx + mrsas", "reason": "Physical RAID controllers not in VMs"}
+      ]
+    },
+
+    "freebsd_15_aarch64": {
+      "os": "FreeBSD 15",
+      "arch": "aarch64",
+      "base_config": "GENERIC (arm64 includes std.arm64 + platform SoC includes)",
+      "proposed_config_name": "GENOA-arm64",
+      "strategy": "Use arm64 GENERIC, enable virtio, ENA, gve as modules; Xen not supported on arm64 in FreeBSD; Hyper-V VMBus not yet ported to arm64.",
+      "notes": [
+        "XENHVM option only exists in options.amd64 and options.i386, NOT options.arm64 — Xen HVM guest is amd64-only in FreeBSD.",
+        "Hyper-V device (hv_vmbus) historically amd64-only in FreeBSD; Azure ARM64 VMs (Cobalt) may require Hyper-V arm64 support not yet upstream.",
+        "GCP ARM instances REQUIRE gve driver (gVNIC mandatory for ARM machine types).",
+        "Apple HVF/Hypervisor.framework: FreeBSD arm64 runs via UTM/QEMU with HVF acceleration; virtio is the device model.",
+        "AWS Graviton (aarch64) instances: ENA driver supports aarch64 since FreeBSD 13 (stable/12 from r345872)."
+      ],
+      "kernel_options": [
+        {"entry": "options COMPAT_LINUXKPI", "hypervisor_coverage": ["kvm", "qemu_tcg", "cloud_hypervisor"], "confidence": "HIGH", "source": "FreeBSD GENERIC"},
+        {"entry": "options SMP", "hypervisor_coverage": ["all"], "confidence": "HIGH", "source": "FreeBSD GENERIC"},
+        {"entry": "options FFS + SOFTUPDATES", "hypervisor_coverage": ["all"], "confidence": "HIGH", "source": "FreeBSD GENERIC"}
+      ],
+      "devices": [
+        {"entry": "device virtio + virtio_pci + vtnet + virtio_blk + virtio_scsi + virtio_balloon", "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "cloud_hypervisor", "apple_hvf"], "confidence": "HIGH"},
+        {"entry": "device nvme + nvd", "hypervisor_coverage": ["aws_nitro", "cloud_hypervisor"], "confidence": "HIGH"},
+        {"entry": "device if_ena", "hypervisor_coverage": ["aws_nitro"], "arch_note": "aarch64 supported since FreeBSD 13", "confidence": "HIGH", "source": "amzn-drivers README"},
+        {"entry": "device gve", "hypervisor_coverage": ["gcp_gvnic"], "arch_note": "GCP ARM VMs REQUIRE gVNIC — no vtnet fallback on newer GCP ARM machine types", "confidence": "HIGH", "source": "GCP docs: ARM CPU platform must use gVNIC"},
+        {"entry": "device uart", "hypervisor_coverage": ["all"], "confidence": "HIGH"},
+        {"entry": "device vt + vt_efifb", "hypervisor_coverage": ["all_uefi"], "confidence": "HIGH"},
+        {"entry": "device efidev + efirtc", "hypervisor_coverage": ["all_uefi"], "confidence": "HIGH"},
+        {"entry": "device acpi (via std.arm64 ACPI support)", "hypervisor_coverage": ["all"], "confidence": "HIGH"}
+      ],
+      "xen_status": "NOT SUPPORTED on FreeBSD aarch64 — XENHVM option absent from options.arm64",
+      "hyperv_status": "NOT PORTED to FreeBSD aarch64 — Azure Cobalt (ARM64) requires investigation; Azure may provide virtio fallback",
+      "vmware_status": "VMware ARM (Apple Silicon host) uses virtio; pvscsi/vmx not needed"
+    },
+
+    "freebsd_15_riscv64": {
+      "os": "FreeBSD 15",
+      "arch": "riscv64",
+      "base_config": "GENERIC-riscv64",
+      "proposed_config_name": "GENOA-riscv64",
+      "maturity": "EXPERIMENTAL — Tier 2 in FreeBSD 15",
+      "notes": [
+        "RISC-V on FreeBSD: QEMU virt platform is the primary target.",
+        "No cloud provider offers RISC-V instances commercially as of 2026.",
+        "Hypervisors: QEMU TCG and KVM with RISC-V H-extension are the only targets.",
+        "bhyve RISC-V: in development, no hardware with H-extension widely available yet.",
+        "Cloud Hypervisor has experimental riscv64 support."
+      ],
+      "devices": [
+        {"entry": "device virtio + virtio_pci + vtnet + virtio_blk", "hypervisor_coverage": ["qemu_tcg", "kvm"], "confidence": "HIGH"},
+        {"entry": "device uart (ns16550 via FDT/ACPI)", "hypervisor_coverage": ["qemu_tcg", "kvm"], "confidence": "HIGH"},
+        {"entry": "device pci", "hypervisor_coverage": ["qemu_tcg", "kvm"], "confidence": "HIGH"}
+      ],
+      "hypervisor_matrix": {
+        "kvm": "POSSIBLE with H-extension CPUs; no commercial hosts",
+        "qemu_tcg": "PRIMARY target; QEMU virt board",
+        "bhyve": "IN DEVELOPMENT — wiki.freebsd.org/riscv/bhyve",
+        "cloud_hypervisor": "EXPERIMENTAL",
+        "all_others": "NOT SUPPORTED"
+      }
+    },
+
+    "freebsd_15_armv7": {
+      "os": "FreeBSD 15",
+      "arch": "armv7",
+      "maturity": "DEPRECATED — FreeBSD 16 will drop armv7; FreeBSD 15 retains Tier 2",
+      "notes": [
+        "FreeBSD 15 retains ARMv7 as Tier 2 (armv7 = ARMv7-A hard-float).",
+        "FreeBSD 16 will drop ARMv7 per Feb 2024 announcement.",
+        "No cloud provider offers ARMv7 instances; physical hardware only (Pi 2, older ARM boards).",
+        "virtio works on ARMv7 via virtio_mmio for QEMU; PCI virtio also works if board has PCIe.",
+        "Not a viable cloud target; document as 'local QEMU only' for genoa."
+      ],
+      "hypervisor_matrix": {
+        "all_cloud": "ABSENT — no cloud provider offers 32-bit ARM instances",
+        "qemu_tcg": "Works with virtio-mmio; for local dev/test only",
+        "recommendation": "Do not include ARMv7 in genoa production images; Tier 3 stretch only"
+      }
+    },
+
+    "freebsd_15_i386": {
+      "os": "FreeBSD 15",
+      "arch": "i386",
+      "maturity": "REMOVED — i386 platform dropped in FreeBSD 15.0",
+      "notes": [
+        "FreeBSD 15.0 does NOT ship an i386 platform kernel.",
+        "32-bit binary compat on amd64 (COMPAT_FREEBSD32) is retained.",
+        "genoa must treat i386 as 'not achievable with FreeBSD 15'.",
+        "If i386 is required, FreeBSD 14.x is the last release with i386 support."
+      ]
+    },
+
+    "netbsd_11_amd64": {
+      "os": "NetBSD 11",
+      "arch": "amd64",
+      "base_config": "GENERIC",
+      "proposed_config_name": "GENOA-amd64",
+      "notes": [
+        "NetBSD 11.0 introduces MICROVM kernel for extremely fast PVH/virtio-MMIO boot.",
+        "Standard virtio drivers: ld(4) [block], vioif(4) [net], vioscsi(4) [scsi], viomb(4) [balloon], viornd(4) [rng], viocon(4) [console].",
+        "NetBSD lacks native cloud-init; see cloud-init-strategy.md for alternatives.",
+        "Xen: NetBSD has Xen port (XEN3 kernel); dom0 and domU supported on amd64.",
+        "Hyper-V: No native Hyper-V drivers in NetBSD 11 mainline — QEMU emulation only.",
+        "VMware: No native VMXNET3/PVSCSI in NetBSD — use E1000 emulation."
+      ],
+      "kernel_options": [
+        {"entry": "options XENPVHVM (XEN3 kernel config)", "hypervisor_coverage": ["xen_hvm", "xen_pvh", "xen_pv"], "confidence": "HIGH", "source": "wiki.netbsd.org/ports/xen/howto"},
+        {"entry": "options MULTIPROCESSOR", "hypervisor_coverage": ["all"], "confidence": "HIGH"},
+        {"entry": "options INET + INET6", "hypervisor_coverage": ["all"], "confidence": "HIGH"}
+      ],
+      "devices": [
+        {"entry": "pseudo-device virtio", "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "vmm_vmd"], "confidence": "HIGH"},
+        {"entry": "pseudo-device vioif", "purpose": "virtio-net", "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve"], "confidence": "HIGH", "source": "man virtio(4) NetBSD"},
+        {"entry": "pseudo-device ld (vioblk)", "purpose": "virtio-blk", "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve", "firecracker"], "confidence": "HIGH"},
+        {"entry": "pseudo-device vioscsi", "hypervisor_coverage": ["kvm", "qemu_tcg"], "confidence": "HIGH"},
+        {"entry": "pseudo-device viomb", "hypervisor_coverage": ["kvm", "qemu_tcg"], "confidence": "HIGH"},
+        {"entry": "pseudo-device viornd", "purpose": "VirtIO RNG — critical for entropy at boot", "hypervisor_coverage": ["kvm", "qemu_tcg", "bhyve"], "confidence": "HIGH", "source": "NetBSD arm64 QEMU docs: -device virtio-rng-pci required or boot hangs"},
+        {"entry": "pseudo-device viocon", "purpose": "virtio-console", "hypervisor_coverage": ["kvm", "qemu_tcg"], "confidence": "HIGH"},
+        {"entry": "device com (ns16550 serial)", "purpose": "Serial console access", "hypervisor_coverage": ["all"], "confidence": "HIGH"},
+        {"entry": "device nvme (wm or nvme driver)", "hypervisor_coverage": ["aws_nitro"], "confidence": "MEDIUM"},
+        {"entry": "pv(4) pseudo-bus", "purpose": "Paravirtual device discovery via kernel cmdline (NetBSD 11 new)", "hypervisor_coverage": ["kvm", "qemu_tcg", "firecracker"], "confidence": "HIGH", "source": "NetBSD 11.0 release notes"}
+      ],
+      "gaps": [
+        "No ENA driver for AWS Nitro — NetBSD on AWS Nitro requires vtnet fallback or ENA port",
+        "No gVNIC driver — GCP support limited to vtnet on older instance types",
+        "No Hyper-V drivers — Azure not viable without community ports",
+        "No VMware paravirt NICs — ESXi uses E1000 emulation only"
+      ]
+    },
+
+    "netbsd_11_aarch64": {
+      "os": "NetBSD 11",
+      "arch": "aarch64",
+      "base_config": "GENERIC64 (evbarm-aarch64)",
+      "notes": [
+        "NetBSD aarch64 described as 'fully functional' including SMP.",
+        "QEMU virt board with virtio-net-pci, virtio-blk-pci, virtio-rng-pci is the primary VM target.",
+        "Xen on aarch64: NOT supported in NetBSD 11 mainline.",
+        "Hyper-V: NOT supported.",
+        "Cloud providers: Very limited — AWS Graviton is Linux-only; no BSD cloud images officially."
+      ],
+      "devices": [
+        {"entry": "pseudo-device vioif + ld + vioscsi + viomb + viornd", "hypervisor_coverage": ["kvm", "qemu_tcg"], "confidence": "HIGH"},
+        {"entry": "device com/uart (pl011 or ns16550 via FDT)", "hypervisor_coverage": ["all"], "confidence": "HIGH"}
+      ]
+    },
+
+    "netbsd_11_riscv64": {
+      "os": "NetBSD 11",
+      "arch": "riscv64",
+      "maturity": "NEW in NetBSD 11 — first stable release with riscv64",
+      "notes": [
+        "NetBSD 11.0 is the FIRST stable release to include riscv64 support.",
+        "Supports StarFive JH71XX boards and QEMU.",
+        "Google Goldfish RTC support added.",
+        "VirtIO (net, disk, etc.) devices supported on QEMU riscv.",
+        "No cloud provider targets."
+      ]
+    },
+
+    "openbsd_76_amd64": {
+      "os": "OpenBSD 7.6",
+      "arch": "amd64",
+      "base_config": "GENERIC",
+      "proposed_config_name": "GENOA-amd64",
+      "notes": [
+        "OpenBSD ships a monolithic GENERIC kernel — no modular configuration.",
+        "All virtio drivers compiled in by default.",
+        "vmm(4)/vmd(8) is OpenBSD's own hypervisor (host role); as GUEST it uses standard virtio.",
+        "OpenBSD 7.6 added AMD SEV support in vmm(4).",
+        "OpenBSD 7.8 updated vmd virtio to 1.2 non-transitional mode.",
+        "Cloud support: limited. No official ENA or gVNIC driver. AWS pre-Nitro (Xen) or QEMU/virtio instances only.",
+        "Hyper-V: No native Hyper-V drivers in OpenBSD — NOT viable on Azure without community work."
+      ],
+      "virtio_drivers": [
+        {"driver": "vio(4)", "purpose": "virtio-net"},
+        {"driver": "vioblk(4)", "purpose": "virtio-blk"},
+        {"driver": "vioscsi(4)", "purpose": "virtio-scsi"},
+        {"driver": "viomb(4)", "purpose": "virtio memory balloon"},
+        {"driver": "viornd(4)", "purpose": "virtio RNG"},
+        {"driver": "viocon(4)", "purpose": "virtio console"},
+        {"driver": "viogpu(4)", "purpose": "virtio GPU"},
+        {"driver": "vmmci(4)", "purpose": "OpenBSD vmm control interface (host-specific)"}
+      ],
+      "gaps": [
+        "No ENA driver — AWS Nitro not supported; use older Xen-based instance types (t2, m4) or QEMU",
+        "No gVNIC driver — GCP support absent",
+        "No Hyper-V drivers — Azure not viable",
+        "vmm(4) is host-only; as guest OpenBSD uses virtio"
+      ]
+    },
+
+    "openbsd_76_aarch64": {
+      "os": "OpenBSD 7.6",
+      "arch": "aarch64",
+      "notes": [
+        "OpenBSD arm64 runs under QEMU/HVF on Apple Silicon (UTM, Lima, etc.).",
+        "virtio drivers same as amd64 (vio, vioblk, etc.).",
+        "Xen on arm64: NOT supported in OpenBSD.",
+        "Apple HVF: OpenBSD arm64 works via QEMU with HVF acceleration; virtio devices work.",
+        "AWS/GCP: No official OpenBSD cloud images for arm64."
+      ]
+    },
+
+    "linux_6x_amd64": {
+      "os": "Linux 6.x",
+      "arch": "amd64",
+      "role": "CONTROL — reference for kernel config completeness",
+      "notes": [
+        "Linux is the baseline that all hypervisors are designed against.",
+        "All hypervisors have first-class Linux support; BSD support is secondary."
+      ],
+      "key_options": [
+        {"entry": "CONFIG_VIRTIO + CONFIG_VIRTIO_PCI + CONFIG_VIRTIO_NET + CONFIG_VIRTIO_BLK + CONFIG_VIRTIO_SCSI + CONFIG_VIRTIO_BALLOON + CONFIG_VIRTIO_CONSOLE + CONFIG_VIRTIO_RNG", "hypervisor_coverage": ["all"]},
+        {"entry": "CONFIG_XEN + CONFIG_XEN_PCIDEV_FRONTEND + CONFIG_XEN_BLKDEV_FRONTEND + CONFIG_XEN_NETDEV_FRONTEND", "hypervisor_coverage": ["xen_hvm", "xen_pvh", "xen_pv"]},
+        {"entry": "CONFIG_HYPERV + CONFIG_HYPERV_NET + CONFIG_HYPERV_STORAGE + CONFIG_HYPERV_UTILS", "hypervisor_coverage": ["hyper_v", "wsl2"]},
+        {"entry": "CONFIG_VMWARE_VMXNET3 + CONFIG_SCSI_VMWARE_PVSCSI", "hypervisor_coverage": ["vmware_esxi"]},
+        {"entry": "CONFIG_ENA (drivers/net/ethernet/amazon/ena)", "hypervisor_coverage": ["aws_nitro"]},
+        {"entry": "CONFIG_GVE (drivers/net/ethernet/google)", "hypervisor_coverage": ["gcp_gvnic"]},
+        {"entry": "CONFIG_KVM_CLOCK", "hypervisor_coverage": ["kvm"]},
+        {"entry": "CONFIG_NVME_CORE + CONFIG_BLK_DEV_NVME", "hypervisor_coverage": ["aws_nitro", "cloud_hypervisor", "firecracker"]},
+        {"entry": "CONFIG_SERIAL_8250 + CONFIG_SERIAL_8250_CONSOLE", "hypervisor_coverage": ["all"]},
+        {"entry": "CONFIG_EFI + CONFIG_EFI_STUB", "hypervisor_coverage": ["all_uefi"]}
+      ]
+    }
+  },
+
+  "hypervisor_summary": {
+    "kvm": {
+      "required_guest_drivers": ["virtio-net", "virtio-blk", "virtio-scsi", "virtio-balloon", "virtio-console", "virtio-rng", "kvm-clock (x86 only)"],
+      "optional": ["vhost-net (host-side)", "virtio-gpu"],
+      "boot": "Standard UEFI or direct kernel load; vmlinuz for Linux, loader.efi for FreeBSD",
+      "arch_support": ["amd64", "aarch64", "riscv64 (H-ext)", "armv7"]
+    },
+    "xen_hvm": {
+      "required_guest_drivers": ["XENHVM option (FreeBSD amd64/i386)", "xenpci", "xentimer", "xenefi", "PV network (xnf/xenbpf)", "PV block (xbf)"],
+      "boot": "HVM = firmware (SeaBIOS/OVMF); PVH = direct ELF load with Xen ELF notes",
+      "arch_support": ["amd64", "i386"],
+      "bsd_gaps": ["No Xen support on FreeBSD aarch64", "No Xen support in OpenBSD/NetBSD aarch64"]
+    },
+    "xen_pv": {
+      "status": "LEGACY — increasingly rare in 2026",
+      "required_guest_drivers": ["Full PV kernel with hypercall interface"],
+      "recommendation": "Do not design genoa images for Xen PV; HVM/PVH is the modern path"
+    },
+    "hyper_v": {
+      "required_guest_drivers": ["hv_vmbus (FreeBSD 'device hyperv')", "hv_netvsc", "hv_storvsc", "hv_utils"],
+      "arch_support": ["amd64 (FreeBSD, Linux)", "aarch64 (Linux; FreeBSD not yet ported)"],
+      "bsd_gaps": ["FreeBSD aarch64: Hyper-V not ported as of 2026", "NetBSD: No Hyper-V drivers", "OpenBSD: No Hyper-V drivers"],
+      "console": "COM1 at 115200 baud; same as standard serial"
+    },
+    "vmware_esxi": {
+      "required_guest_drivers": ["vmx (vmxnet3, FreeBSD 'device vmx')", "pvscsi (FreeBSD 'device pvscsi')", "open-vm-tools (userspace)"],
+      "legacy": "BusLogic emulation still works but deprecated",
+      "arch_support": ["amd64"],
+      "bsd_notes": ["FreeBSD: vmx + pvscsi in GENERIC; open-vm-tools via pkg", "NetBSD/OpenBSD: E1000 emulation only"]
+    },
+    "apple_hvf": {
+      "description": "Apple Hypervisor.framework + Virtualization.framework",
+      "required_guest_drivers": ["virtio-net", "virtio-blk", "virtio-rng (required to prevent boot hang)"],
+      "arch_support": ["aarch64 ONLY (Apple Silicon)"],
+      "guest_os": ["Linux (first-class)", "macOS 12+ (Virtualization.framework)", "FreeBSD arm64 (via QEMU+HVF)", "OpenBSD arm64 (via QEMU+HVF)"],
+      "notes": "Apple's Virtualization.framework limits guests to Linux + macOS natively; QEMU with HVF enables BSD guests"
+    },
+    "bhyve": {
+      "required_guest_drivers": ["virtio-net (vtnet)", "virtio-blk OR ahci-hd", "virtio-rng"],
+      "arch_support": ["amd64", "aarch64 (with U-Boot, experimental)"],
+      "notes": "bhyve uses UEFI (OVMF) for guest boot; loader.efi works as guest bootloader"
+    },
+    "vmm_vmd": {
+      "description": "OpenBSD's vmm(4)/vmd(8) hypervisor",
+      "required_guest_drivers": ["virtio-net (vio/vtnet)", "virtio-blk (vioblk/virtio_blk)"],
+      "arch_support": ["amd64"],
+      "guest_os": ["OpenBSD (primary)", "Linux", "NetBSD (limited)", "FreeBSD (limited)"]
+    },
+    "aws_nitro": {
+      "required_guest_drivers": ["ENA (if_ena.ko for FreeBSD)", "NVMe (nvme + nvd)", "optional: SR-IOV EFA for HPC"],
+      "arch_support": ["amd64", "aarch64 (Graviton)"],
+      "bsd_status": ["FreeBSD: ENA + NVMe supported since 12.x/13.x", "NetBSD: No ENA driver", "OpenBSD: No ENA driver"]
+    },
+    "gcp_gvnic": {
+      "required_guest_drivers": ["gve.ko (FreeBSD 14+, loadable module)", "vtnet fallback for older/pre-C3 instance types"],
+      "arch_support": ["amd64", "aarch64 (GCP ARM VMs REQUIRE gVNIC)"],
+      "notes": "GCP C3/C4/H3 and ARM instances: gVNIC is mandatory, no vtnet option"
+    },
+    "firecracker": {
+      "required_guest_drivers": ["virtio-net", "virtio-blk", "virtio-vsock"],
+      "boot": "Loads vmlinux directly (no firmware); no UEFI; no BIOS",
+      "arch_support": ["amd64", "aarch64"],
+      "bsd_support": "NOT SUPPORTED — Firecracker officially supports Linux and OSv only; no BSD guest support documented. Boot path (direct vmlinux load, no EFI) is incompatible with BSD loaders.",
+      "kata_containers": "Kata wraps Firecracker or QEMU; same constraints apply"
+    },
+    "cloud_hypervisor": {
+      "required_guest_drivers": ["virtio-net", "virtio-blk", "virtio-pmem", "virtio-fs", "virtio-vsock", "NVMe"],
+      "arch_support": ["amd64", "aarch64", "riscv64 (experimental)"],
+      "bsd_support": "Officially supports Linux + Windows; FreeBSD POSSIBLE with virtio drivers but not documented as supported",
+      "boot": "PVH for x86 or direct kernel; UEFI OVMF supported"
+    },
+    "qemu_tcg": {
+      "description": "Software TCG emulation — universal fallback",
+      "required_guest_drivers": ["virtio-* for performance; falls back to emulated hardware (RTL8139, ISA, etc.)"],
+      "arch_support": ["ALL architectures including cross-arch"],
+      "notes": "Slowest option but supports every architecture combination"
+    },
+    "gvisor": {
+      "status": "NOT A GUEST TARGET",
+      "explanation": "gVisor intercepts syscalls at the application level using a userspace kernel (Sentry). It does not present a hypervisor interface to guest OS kernels. genoa images cannot 'run on' gVisor — gVisor runs containers, not VMs. The Sentry IS the kernel; there is no guest kernel slot.",
+      "architecture": "amd64 only for the sandbox; x86_64 Linux host required"
+    },
+    "wsl2": {
+      "status": "LINUX ONLY — amd64 only",
+      "explanation": "WSL2 runs a Microsoft-provided Linux kernel in a Hyper-V VM. Custom kernels are possible (specify in .wslconfig) but must be Linux kernels. BSD images cannot run in WSL2. Document as out-of-scope for genoa.",
+      "arch_support": ["amd64 only"]
+    },
+    "bare_metal": {
+      "required_drivers": ["Platform-specific: BCM2711 GENET (Pi 4), BCM2712 (Pi 5)", "PCIe NVMe controllers", "ACPI/FDT for device discovery"],
+      "arch_support": ["amd64 (mini-PCs, servers)", "aarch64 (Raspberry Pi 4/5, Ampere servers, AWS Graviton hardware)", "riscv64 (VisionFive 2, StarFive JH71XX boards)"],
+      "notes": "Bare metal requires actual device drivers beyond virtio; cloud/VM kernel image insufficient without board-specific drivers"
+    }
+  }
+}

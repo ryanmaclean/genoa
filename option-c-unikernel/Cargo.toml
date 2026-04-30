@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+    "genoa-config",
+    "genoa-agent",
+    "genoa-init",
+]
+
+[workspace.package]
+version     = "0.1.0"
+edition     = "2021"
+authors     = ["Genoa Option-C Contributors"]
+license     = "Apache-2.0"
+repository  = "https://github.com/ryanmaclean/genoa"
+
+[workspace.dependencies]
+# serde family — MIT OR Apache-2.0
+serde       = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json  = { version = "1.0", default-features = false, features = ["alloc"] }
+# smoltcp — 0BSD
+smoltcp     = { version = "0.11", default-features = false, features = [
+    "socket-tcp", "socket-dhcpv4", "proto-ipv4", "medium-ethernet",
+    "alloc",
+] }
+# rustls — Apache-2.0 / MIT / ISC (triple)
+# Note: rustls 0.23 does not expose an "alloc" feature flag; no_std support
+# is handled via default-features = false + the ring/aws-lc-rs crypto backend.
+rustls      = { version = "0.23", default-features = false, features = ["ring", "logging"] }
+# toml_edit — MIT OR Apache-2.0 (build-time only, not linked into kernel image)
+toml        = { version = "0.8", default-features = false, features = ["parse"] }
+# sha2 — MIT OR Apache-2.0
+sha2        = { version = "0.10", default-features = false }
+# hex — MIT OR Apache-2.0
+hex         = { version = "0.4", default-features = false, features = ["alloc"] }
+
+[profile.release]
+opt-level   = "z"
+lto         = true
+codegen-units = 1
+panic       = "abort"
+
+[profile.dev]
+panic = "abort"

@@ -1,0 +1,425 @@
+[
+  {
+    "name": "HashiCorp Packer",
+    "category": "A",
+    "license": "BUSL-1.1",
+    "status": "DISQUALIFIED-vendoring",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/hashicorp/packer",
+    "role_in_genoa": "None — disqualified. Industry-standard image builder; genoa is the BSD-native replacement in this niche."
+  },
+  {
+    "name": "mkosi",
+    "category": "A",
+    "license": "LGPL-2.1-or-later",
+    "status": "DISQUALIFIED-vendoring",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/systemd/mkosi",
+    "role_in_genoa": "None — disqualified for vendoring. Can be invoked externally for Linux-base genoa targets. Systemd-ecosystem, Linux-only."
+  },
+  {
+    "name": "osbuild",
+    "category": "A",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/osbuild/osbuild",
+    "role_in_genoa": "Red Hat's image pipeline engine; genoa Option B substrate. Not used in Option A (FreeBSD/NetBSD path). Reference implementation for pipeline-stage model."
+  },
+  {
+    "name": "bootc-image-builder",
+    "category": "A",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/osbuild/bootc-image-builder",
+    "role_in_genoa": "OCI container -> bootable disk image. Relevant if genoa adds a container-in, disk-out pipeline for Linux targets. Not a BSD substrate."
+  },
+  {
+    "name": "bootc",
+    "category": "A",
+    "license": "Apache-2.0 OR MIT",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/containers/bootc",
+    "role_in_genoa": "Container-native bootable image tool. Potential model for genoa's 'BYOI from OCI' story on Linux. Not BSD-native but architecture is instructive."
+  },
+  {
+    "name": "diskimage-builder (DIB)",
+    "category": "A",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/openstack/diskimage-builder",
+    "role_in_genoa": "OpenStack image builder; Linux-only in practice. Element-based plugin model is a good prior art for genoa's plugin architecture. Do not vendor."
+  },
+  {
+    "name": "image-builder (k8s-sigs)",
+    "category": "A",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/kubernetes-sigs/image-builder",
+    "role_in_genoa": "Kubernetes cluster node image builder. Packer-based; disqualified for direct use due to Packer dependency. Reference for multi-provider matrix approach."
+  },
+  {
+    "name": "nanobsd",
+    "category": "A",
+    "license": "BSD-2-Clause",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://cgit.freebsd.org/src/tree/tools/tools/nanobsd",
+    "role_in_genoa": "FreeBSD base shell scripts for minimal image builds. In-tree in FreeBSD. genoa Option A builds on the same substrate. Understand before reimplementing."
+  },
+  {
+    "name": "makefs",
+    "category": "A",
+    "license": "BSD-2-Clause",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://man.freebsd.org/cgi/man.cgi?query=makefs",
+    "role_in_genoa": "FreeBSD/NetBSD tool to create filesystem images without root. Core primitive for genoa Option A. Already in FreeBSD base — invoke, don't reimplement."
+  },
+  {
+    "name": "mkimg",
+    "category": "A",
+    "license": "BSD-2-Clause",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://man.freebsd.org/cgi/man.cgi?query=mkimg",
+    "role_in_genoa": "FreeBSD tool to create disk images with partition tables. Core primitive for genoa Option A. Invoke as external command."
+  },
+  {
+    "name": "Yocto / OpenEmbedded",
+    "category": "A",
+    "license": "MIT (project), GPL-mostly (tools)",
+    "status": "NOT-APPLICABLE",
+    "last_commit_year": 2026,
+    "project_url": "https://www.yoctoproject.org",
+    "role_in_genoa": "Embedded Linux distro builder. Linux-only, no BSD support. GPL toolchain disqualifies for vendoring. Mention as prior art only."
+  },
+  {
+    "name": "Alpine mkimage / apkbuild",
+    "category": "A",
+    "license": "MIT",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://gitlab.alpinelinux.org/alpine/aports",
+    "role_in_genoa": "Alpine Linux image creation scripts. Relevant if genoa supports Alpine as a base. apk package model is a reference for minimal image design."
+  },
+  {
+    "name": "NixOS nix-build (VM images)",
+    "category": "A",
+    "license": "LGPL-2.1 (nix), MIT (nixpkgs)",
+    "status": "DISQUALIFIED-vendoring",
+    "last_commit_year": 2026,
+    "project_url": "https://nixos.org",
+    "role_in_genoa": "Nix itself is LGPL — disqualified for vendoring. NixOS VM image generation is technically excellent reference architecture. nixpkgs (MIT) could theoretically be used without nix binary."
+  },
+  {
+    "name": "HashiCorp Vagrant",
+    "category": "A",
+    "license": "BUSL-1.1",
+    "status": "DISQUALIFIED-vendoring",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/hashicorp/vagrant",
+    "role_in_genoa": "None — BUSL disqualifies vendoring (same pattern as Packer). Vagrant box format is relevant for genoa local-test output target."
+  },
+  {
+    "name": "bsdec2-image-upload",
+    "category": "B",
+    "license": "BSD-2-Clause",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/cperciva/bsdec2-image-upload",
+    "role_in_genoa": "PURPOSE-BUILT FreeBSD AMI registration tool by Colin Percival. C + shell. Handles S3 upload, snapshot conversion, AMI registration. USE AS AWS ADAPTER. Last commit 2026-01."
+  },
+  {
+    "name": "aws ec2 import-image (aws-cli)",
+    "category": "B",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/aws/aws-cli",
+    "role_in_genoa": "Generic AWS VM Import. Supports vmdk/raw/ova. Use as fallback when bsdec2-image-upload is not needed (non-FreeBSD images). Invoke via aws-cli subprocess."
+  },
+  {
+    "name": "gcloud compute images import",
+    "category": "B",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://cloud.google.com/sdk",
+    "role_in_genoa": "GCP image import CLI. Invoke as external command for GCP target. gcloud SDK is Apache-2.0."
+  },
+  {
+    "name": "daisy (Google)",
+    "category": "B",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/GoogleCloudPlatform/compute-daisy",
+    "role_in_genoa": "GCP image build-and-import workflow tool. Active (commit 2026-04-30). Could orchestrate multi-step GCP import; genoa can invoke directly or use gcloud wrapper."
+  },
+  {
+    "name": "oci-cli",
+    "category": "B",
+    "license": "UPL-1.0 OR Apache-2.0",
+    "status": "NEEDS-LICENSE-DECISION",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/oracle/oci-cli",
+    "role_in_genoa": "Oracle Cloud CLI. UPL-1.0 is OSI-approved permissive license; Apache-2.0 path available as dual-license. See license-questions.md. Last commit 2026-04-28."
+  },
+  {
+    "name": "vultr-cli",
+    "category": "B",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/vultr/vultr-cli",
+    "role_in_genoa": "Vultr provider CLI. Apache-2.0. Active. Invoke for Vultr upload target."
+  },
+  {
+    "name": "doctl",
+    "category": "B",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/digitalocean/doctl",
+    "role_in_genoa": "DigitalOcean CLI. Apache-2.0. Active. Invoke for DO custom image upload."
+  },
+  {
+    "name": "linode-cli",
+    "category": "B",
+    "license": "BSD-3-Clause",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/linode/linode-cli",
+    "role_in_genoa": "Linode/Akamai Cloud CLI. BSD-3. Active. Invoke for Linode image upload."
+  },
+  {
+    "name": "hcloud-cli",
+    "category": "B",
+    "license": "MIT",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/hetznercloud/cli",
+    "role_in_genoa": "Hetzner Cloud CLI. MIT. Active. Invoke for Hetzner image upload. Note: Hetzner does not support custom OS images the same way; use server snapshots."
+  },
+  {
+    "name": "scaleway-cli (scw)",
+    "category": "B",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/scaleway/scaleway-cli",
+    "role_in_genoa": "Scaleway CLI. Apache-2.0. Active. Invoke for Scaleway image import."
+  },
+  {
+    "name": "OpenTofu",
+    "category": "B",
+    "license": "MPL-2.0",
+    "status": "NEEDS-LICENSE-DECISION",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/opentofu/opentofu",
+    "role_in_genoa": "Open-source Terraform fork. MPL-2.0 is copyleft-ish (file-level). Not on genoa's hard-allowed list. See license-questions.md. Would be invoked externally, not vendored."
+  },
+  {
+    "name": "Pulumi",
+    "category": "B",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/pulumi/pulumi",
+    "role_in_genoa": "IaC platform. Apache-2.0. Could orchestrate multi-cloud image registration workflows. Invoke externally; do not vendor pulumi SDK unless needed."
+  },
+  {
+    "name": "virt-install (libvirt)",
+    "category": "B",
+    "license": "LGPL-2.0-or-later",
+    "status": "INVOKE-ONLY",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/virt-manager/virt-manager",
+    "role_in_genoa": "libvirt VM provisioning. LGPL — no vendoring. Can invoke as external command for local qemu/kvm testing target. Useful for CI integration tests."
+  },
+  {
+    "name": "cloud-init",
+    "category": "C",
+    "license": "GPL-3.0 OR Apache-2.0 (dual-license, per-file)",
+    "status": "NEEDS-LICENSE-DECISION",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/cloud-init/cloud-init",
+    "role_in_genoa": "De facto standard first-boot configuration. Ships in guest images; genoa bakes datasource config. Apache-2.0 path exists but GPL-3 files may be present. See license-questions.md."
+  },
+  {
+    "name": "ignition",
+    "category": "C",
+    "license": "Apache-2.0",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/coreos/ignition",
+    "role_in_genoa": "CoreOS-style declarative first-boot tool. Apache-2.0. Genoa could generate ignition configs as an alternative to cloud-init for Fedora CoreOS / Flatcar targets."
+  },
+  {
+    "name": "cloudbase-init",
+    "category": "C",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/cloudbase/cloudbase-init",
+    "role_in_genoa": "Windows guest first-boot equivalent to cloud-init. Apache-2.0. Active. Relevant only if genoa adds Windows image targets."
+  },
+  {
+    "name": "bsdinstall scripts",
+    "category": "C",
+    "license": "BSD-2-Clause",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://cgit.freebsd.org/src/tree/usr.sbin/bsdinstall",
+    "role_in_genoa": "FreeBSD installer scripts. In FreeBSD base. genoa can embed bsdinstall scripts for unattended first-run configuration on bare images. BSD-2."
+  },
+  {
+    "name": "bsd-cloud-image.org",
+    "category": "D",
+    "license": "BSD-2-Clause (inferred; project builds FreeBSD/OpenBSD/NetBSD images)",
+    "status": "ACTIVE-reference",
+    "last_commit_year": 2025,
+    "project_url": "https://bsd-cloud-image.org",
+    "role_in_genoa": "Community effort to produce official BSD cloud images. Status: active but low-resource. License unconfirmed from web fetch — site returned minimal content. genoa should align with or contribute to rather than duplicate."
+  },
+  {
+    "name": "FreeBSD release/Makefile.vm",
+    "category": "D",
+    "license": "BSD-2-Clause",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://cgit.freebsd.org/src/tree/release/Makefile.vm",
+    "role_in_genoa": "Official FreeBSD VM image build targets. genoa Option A is essentially a structured wrapper around this. Read carefully before reimplementing any steps."
+  },
+  {
+    "name": "smolBSD (NetBSDfr)",
+    "category": "D",
+    "license": "BSD-2-Clause",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/NetBSDfr/smolbsd",
+    "role_in_genoa": "User's local reference implementation. NetBSD microVM builder using makefs+mkimg. Active (2026-04-27). genoa should learn from its minimal-image approach."
+  },
+  {
+    "name": "HardenedBSD cloud images",
+    "category": "D",
+    "license": "BSD-2-Clause (FreeBSD-inherited)",
+    "status": "ACTIVE-reference",
+    "last_commit_year": 2025,
+    "project_url": "https://github.com/HardenedBSD/HardenedBSD",
+    "role_in_genoa": "Security-hardened FreeBSD fork. Has /release tooling. Limited cloud image production. Useful as a reference for hardened image builds; not a direct dependency."
+  },
+  {
+    "name": "depenguin-me",
+    "category": "D",
+    "license": "MIT",
+    "status": "REJECTED-by-design",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/depenguin-me/depenguin-run",
+    "role_in_genoa": "Trampoline pattern: boots mfsBSD via QEMU inside Linux rescue env to install FreeBSD. MIT license. REJECTED by genoa design — genoa builds native images, not trampolines. Last commit 2026-03."
+  },
+  {
+    "name": "in-toto",
+    "category": "E",
+    "license": "Apache-2.0",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/in-toto/in-toto",
+    "role_in_genoa": "Supply chain integrity framework. Apache-2.0. Use for build-step attestation — each genoa pipeline stage signs its outputs. Links to SLSA."
+  },
+  {
+    "name": "cosign / sigstore",
+    "category": "E",
+    "license": "Apache-2.0",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/sigstore/cosign",
+    "role_in_genoa": "Image and artifact signing. Apache-2.0. Active. Use for signing genoa-produced image manifests and SBOM documents."
+  },
+  {
+    "name": "SLSA framework",
+    "category": "E",
+    "license": "Apache-2.0 (pre-2023 parts), Community Specification License 1.0 (newer parts)",
+    "status": "APPROVED-reference",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/slsa-framework/slsa",
+    "role_in_genoa": "Supply-chain levels specification. Normative target for genoa attestation design. Not a library — adopt SLSA Level 2+ as the compliance target."
+  },
+  {
+    "name": "syft",
+    "category": "E",
+    "license": "Apache-2.0",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/anchore/syft",
+    "role_in_genoa": "SBOM generator (SPDX/CycloneDX output). Apache-2.0. Active. USE AS SBOM GENERATOR for genoa-produced images. Invoke post-build to enumerate image contents."
+  },
+  {
+    "name": "spdx-tools",
+    "category": "E",
+    "license": "Apache-2.0",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/spdx/spdx-tools",
+    "role_in_genoa": "SPDX document validation and conversion. Apache-2.0. Use to validate syft-produced SPDX output before publishing."
+  },
+  {
+    "name": "guac",
+    "category": "E",
+    "license": "Apache-2.0",
+    "status": "APPROVED-external-invocation",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/guacsec/guac",
+    "role_in_genoa": "Graph-based supply chain metadata aggregator. Apache-2.0. Active. Downstream consumer of genoa SBOMs/attestations; not a direct genoa dependency."
+  },
+  {
+    "name": "ollama",
+    "category": "F",
+    "license": "MIT",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/ollama/ollama",
+    "role_in_genoa": "Local LLM serving. MIT. Active. Candidate for baking into agent-capable genoa images."
+  },
+  {
+    "name": "Caddy",
+    "category": "F",
+    "license": "Apache-2.0",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/caddyserver/caddy",
+    "role_in_genoa": "Reverse proxy / TLS terminator. Apache-2.0. Active. Good candidate for genoa image service layer — auto-TLS, no external dep."
+  },
+  {
+    "name": "Vector",
+    "category": "F",
+    "license": "MPL-2.0",
+    "status": "NEEDS-LICENSE-DECISION",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/vectordotdev/vector",
+    "role_in_genoa": "Log/metrics pipeline. MPL-2.0 (copyleft-ish, file-level). Not on hard-allowed list. See license-questions.md. Performance is excellent."
+  },
+  {
+    "name": "Fluent Bit",
+    "category": "F",
+    "license": "Apache-2.0",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/fluent/fluent-bit",
+    "role_in_genoa": "Lightweight log/metrics shipper. Apache-2.0. Active. PREFERRED over Vector for log shipping in genoa images — no license concerns."
+  },
+  {
+    "name": "Datadog Agent",
+    "category": "F",
+    "license": "Apache-2.0 (core), BSD-3-Clause (some components)",
+    "status": "APPROVED-vendorable",
+    "last_commit_year": 2026,
+    "project_url": "https://github.com/DataDog/datadog-agent",
+    "role_in_genoa": "Observability agent. Apache-2.0 core. Candidate for baking into fleet-observable genoa images."
+  }
+]

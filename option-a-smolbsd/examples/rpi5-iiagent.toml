@@ -1,0 +1,108 @@
+# genoa manifest v1 — FreeBSD aarch64 on RPi5 with ii-agent v0.1
+# Profile: rpi5-iiagent
+# Purpose: Minimal FreeBSD 15 aarch64 image for Raspberry Pi 5 with
+#          ii-agent wired to the Ergo IRC server at ergo.local:6697.
+#
+# Build: nu genoa.nu build examples/rpi5-iiagent.toml
+# Plan:  nu genoa.nu describe examples/rpi5-iiagent.toml
+
+schema_version = "v1"
+
+[image]
+name        = "smolbsd-rpi5-iiagent"
+version     = "v0.1.0"
+format      = "raw"           # Pi firmware loads raw images; convert to .img
+size_mb     = 4096            # 4 GiB provisioned, actual ~200 MiB filled
+output_dir  = "./out"
+description = "Minimal FreeBSD 15.0 aarch64 for RPi5 with ii-agent IRC bot"
+
+[target]
+os          = "freebsd"
+os_version  = "15.0-RELEASE"
+arch        = "aarch64"
+platform    = "rpi5"
+build_host  = "builder@localhost:2225"   # fb-vm-24 via jump host
+
+[kernel]
+config            = "RPI"                # FreeBSD upstream RPi kernel config
+strip_debug       = true
+extra_options     = [
+  "nodevice wlan",         # no WiFi — we use wired only
+  "nodevice wlan_amrr",
+  "nodevice wlan_ccmp",
+  "nodevice wlan_tkip",
+  "nodevice wlan_xauth",
+  "nodevice sound",        # headless agent node
+  "nodevice snd_hda",
+  "nooptions SND_SUPPORT",
+  "nooptions WITNESS",
+  "nooptions INVARIANTS",
+  "nooptions INVARIANT_SUPPORT",
+]
+
+[packages]
+include = [
+  "FreeBSD-runtime",
+  "FreeBSD-clibs",
+  "FreeBSD-rc",
+  "FreeBSD-utilities",
+  "FreeBSD-pkg-bootstrap",
+  "FreeBSD-libarchive",
+  "FreeBSD-openssl-lib",
+  "FreeBSD-fetch",
+  "FreeBSD-mtree",
+  "FreeBSD-certctl",
+  "FreeBSD-kerberos-lib",
+  "FreeBSD-libexecinfo",
+  "FreeBSD-libucl",
+  "FreeBSD-ee",
+]
+exclude_patterns = [
+  "*-dbg",
+  "*-lib32",
+  "FreeBSD-tests*",
+  "FreeBSD-lldb*",
+  "FreeBSD-devel*",
+  "FreeBSD-src*",
+  "FreeBSD-kernel-minimal",
+]
+pkg_repo = "https://pkg.freebsd.org/FreeBSD:15:aarch64/quarterly"
+
+[agent]
+name    = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type   = "gitea_release"
+repo   = "studio/ii-agent"
+tag    = "ii-agent/v0.1.0-freebsd-aarch64"
+asset  = "ii-agent-freebsd-aarch64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+# NOTE: sha256 above is a placeholder. Update to actual digest before production.
+
+[agent.rc_service]
+enabled      = true
+name         = "ii_agent"
+command_args = "-s ergo.local -p 6697 -n smolbsd-pi5 -j '#fleet' --tls"
+
+[agent.config]
+irc_server     = "ergo.local"
+irc_port       = "6697"
+irc_nick       = "smolbsd-pi5"
+irc_channel    = "#fleet"
+irc_tls        = "true"
+log_dir        = "/var/log/ii-agent"
+
+[network]
+interface = "genet0"   # RPi5 onboard GigE adapter (BCM54213PE)
+mode      = "dhcp"
+hostname  = "smolbsd-pi5"
+
+[signing]
+tool = "none"   # set to "signify" and provide key_file for production
+
+[metadata]
+campaign        = "smolbsd"
+bake_off_option = "A"
+profile         = "rpi5-iiagent"
+maintainer      = "ryanmaclean"

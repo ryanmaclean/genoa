@@ -1,0 +1,586 @@
+{
+  "schema_version": "1.0.0",
+  "catalog_url": "/v1/providers",
+  "generated": "2026-04-30",
+  "providers": [
+    {
+      "id": "aws",
+      "display_name": "Amazon Web Services EC2",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "vmdk",
+        "vhd",
+        "vhdx",
+        "ova"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "No direct ISO boot. ARM64 import blocked by VM Import/Export. Free-tier FreeBSD AMIs available. Official AMIs for amd64 and aarch64 from FreeBSD RE."
+    },
+    {
+      "id": "gcp",
+      "display_name": "Google Cloud Compute Engine",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "vmdk",
+        "tar.gz"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "FreeBSD 14.0+ has gVNIC preview support. Images not in default public project; must reference freebsd-org-cloud-dev. qcow2 not directly importable; must convert to raw."
+    },
+    {
+      "id": "azure",
+      "display_name": "Microsoft Azure Virtual Machines",
+      "byoi_support": "api",
+      "byoi_format": [
+        "vhd"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "notes": "Gen2 VMs use UEFI. FreeBSD in Azure Marketplace (Foundation-maintained, Q1 2025: 13.5-RELEASE). VHDX format not supported for upload despite being native to Hyper-V. Root account disabled by default in Azure FreeBSD images."
+    },
+    {
+      "id": "oci",
+      "display_name": "Oracle Cloud Infrastructure",
+      "byoi_support": "api",
+      "byoi_format": [
+        "qcow2",
+        "vmdk"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Free tier includes 4 OCPUs Ampere A1 (aarch64) - popular for FreeBSD. BYOI not supported on bare metal directly. OCI exports use .oci container format wrapping qcow2."
+    },
+    {
+      "id": "alicloud",
+      "display_name": "Alibaba Cloud ECS",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "qcow2",
+        "vhd",
+        "vmdk"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "FreeBSD 11/12 require kernel patches not included in upstream builds. Public FreeBSD images are Alibaba-maintained with patches. Primary audience is China market."
+    },
+    {
+      "id": "tencentcloud",
+      "display_name": "Tencent Cloud CVM",
+      "byoi_support": "api",
+      "byoi_format": [
+        "qcow2",
+        "vhd",
+        "raw",
+        "vmdk"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Primary market China. International portal (intl.cloud.tencent.com) differs from domestic. FreeBSD availability in international region not fully confirmed - staleness risk."
+    },
+    {
+      "id": "ibmcloud",
+      "display_name": "IBM Cloud VPC",
+      "byoi_support": "api",
+      "byoi_format": [
+        "qcow2",
+        "vhd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "ppc64le"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Power Systems (ppc64le) available via IBM Power Virtual Server - separate product. Classic Infrastructure (non-VPC) has different image requirements. No native BSD support in stock catalog."
+    },
+    {
+      "id": "vultr",
+      "display_name": "Vultr Cloud Compute",
+      "byoi_support": "api",
+      "byoi_format": [
+        "iso"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "snapshot-url",
+      "notes": "Best FreeBSD experience among mid-tier providers as of 2025. Stock images use UFS root. IPv6 available in all 33 regions. No aarch64 compute available. Max 2 custom ISOs per account."
+    },
+    {
+      "id": "digitalocean",
+      "display_name": "DigitalOcean",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "qcow2",
+        "vhdx",
+        "vdi",
+        "vmdk"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "CRITICAL: FreeBSD dropped from stock images July 2022. Must use custom image path. No aarch64 for custom images. Requires bsd-cloudinit for FreeBSD custom images. Max 100 GB uncompressed."
+    },
+    {
+      "id": "linode_akamai",
+      "display_name": "Akamai Cloud (Linode)",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "CRITICAL: FreeBSD not officially supported. Only ext3/ext4 accepted - rules out UFS and ZFS natively. Max 6 GB uncompressed is very small for BSD images with packages. Aarch64 available for instances but not confirmed for custom image upload."
+    },
+    {
+      "id": "hetzner_cloud",
+      "display_name": "Hetzner Cloud",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "No native image upload endpoint as of 2026-04. hcloud-upload-image is community-supported, not official. FreeBSD deployable via workaround. ARM64 (CAX) instances available. IPv6 standard on all servers."
+    },
+    {
+      "id": "hetzner_robot",
+      "display_name": "Hetzner Robot (Dedicated)",
+      "byoi_support": "console",
+      "byoi_format": [
+        "tar.gz"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Hetzner dropped FreeBSD rescue system - FreeBSD install now requires KVM console (paid add-on) or USB stick on request. Custom image installimage officially Linux-only. No Hetzner support for custom installs."
+    },
+    {
+      "id": "scaleway",
+      "display_name": "Scaleway Instances",
+      "byoi_support": "api",
+      "byoi_format": [
+        "qcow2"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "EFI-only for imported images is a hard constraint - BIOS-only BSD images will not boot. No FreeBSD in stock image catalog. Apple Silicon M1/M4/M4 Pro available as dedicated bare-metal Mac mini."
+    },
+    {
+      "id": "ovhcloud_public",
+      "display_name": "OVHcloud Public Cloud",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "qcow2"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "OpenStack under the hood gives broad compatibility. Dedicated server BYOI (separate product) supports raw/qcow2 for bare metal. Docs updated Feb 2026."
+    },
+    {
+      "id": "ovhcloud_dedicated",
+      "display_name": "OVHcloud Dedicated Servers (BYOI)",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "qcow2"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Separate product from OVHcloud Public Cloud. Full bare-metal BYOI with cloud-init for FreeBSD viable. Dedibox (dedicated) also supports FreeBSD as a stock install option."
+    },
+    {
+      "id": "contabo",
+      "display_name": "Contabo Cloud VPS/VDS",
+      "byoi_support": "api",
+      "byoi_format": [
+        "iso",
+        "qcow2"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Custom Images is a paid add-on, not included by default. amd64 only - no aarch64. qcow2 treated as pre-installed disk image. Very budget-oriented; lower SLA than Tier 1."
+    },
+    {
+      "id": "equinix_metal",
+      "display_name": "Equinix Metal (Packet)",
+      "byoi_support": "api",
+      "byoi_format": [
+        "iso"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "deployment_path": "snapshot-url",
+      "notes": "CRITICAL: Equinix Metal sunsets June 30, 2026. No new commercial sales. Do NOT build new genoa adapters for this target. Existing users should migrate. Alternatives: Hivelocity, phoenixNAP, Latitude.sh."
+    },
+    {
+      "id": "hivelocity",
+      "display_name": "Hivelocity Bare Metal",
+      "byoi_support": "api",
+      "byoi_format": [
+        "iso"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "snapshot-url",
+      "notes": "Instant-deploy server catalog. Global locations. Proxmox deployable. FreeBSD installable via iPXE or IPMI console. No aarch64 compute."
+    },
+    {
+      "id": "phoenixnap",
+      "display_name": "phoenixNAP Bare Metal Cloud",
+      "byoi_support": "api",
+      "byoi_format": [
+        "iso"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "snapshot-url",
+      "notes": "BMC = Bare Metal Cloud product. Strong API and IaC story. Custom OS details not fully public-documented without account. FreeBSD not listed as stock OS - custom path required."
+    },
+    {
+      "id": "ramnode",
+      "display_name": "RamNode KVM VPS",
+      "byoi_support": "console",
+      "byoi_format": [
+        "iso"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Budget-oriented but reputable. KVM only for BSD. OpenVZ VPS does not support BSD. FreeBSD and other BSDs deployable with full virtualization."
+    },
+    {
+      "id": "buyvm",
+      "display_name": "BuyVM / Frantech Solutions",
+      "byoi_support": "console",
+      "byoi_format": [
+        "iso"
+      ],
+      "bsd_native_support": [
+        "freebsd",
+        "openbsd",
+        "netbsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Well-regarded budget BSD provider. DDoS protection included. No public API for automation. Stock BSD images may be older versions (FreeBSD 9/10/11, OpenBSD 6 per docs - check for updates)."
+    },
+    {
+      "id": "lambda_cloud",
+      "display_name": "Lambda Cloud (GPU)",
+      "byoi_support": "none",
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "BYOI: none. BSD: none. GPU specialist. No custom image path exists. Not suitable for genoa unless targeting ML workloads on Lambda-provided Ubuntu."
+    },
+    {
+      "id": "coreweave",
+      "display_name": "CoreWeave (GPU)",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "qcow2"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "KubeVirt path makes FreeBSD theoretically deployable but not validated. Primarily GPU/ML workloads. No BSD stock images. Documentation requires account access to verify BYOI details."
+    },
+    {
+      "id": "runpod",
+      "display_name": "RunPod (GPU)",
+      "byoi_support": "api",
+      "byoi_format": [
+        "oci-container"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Container-only BYOI, not VM image. BSD not deployable. GPU Pod model; suitable for ML workloads only from genoa perspective. Not a VM deploy target for BSD/custom OS images."
+    },
+    {
+      "id": "paperspace",
+      "display_name": "Paperspace (DigitalOcean Gradient)",
+      "byoi_support": "console",
+      "byoi_format": [
+        "oci-container"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Machines product supports custom templates but only from cloning existing Linux/Windows VMs. BSD not deployable. GPU specialist. Gradient = container-only path."
+    },
+    {
+      "id": "crusoe",
+      "display_name": "Crusoe Cloud (GPU)",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw",
+        "qcow2"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Renewable/stranded energy focus differentiator. Custom image support likely but unconfirmed for BSD without account access. GPU H100/A100 focus. Small provider, growing."
+    },
+    {
+      "id": "flyio",
+      "display_name": "Fly.io",
+      "byoi_support": "none",
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "notes": "OUT OF SCOPE for genoa BSD/VM deploy. Docker-only ingestion. Firecracker VMs are internal implementation. No path for arbitrary OS images. Global anycast edge."
+    },
+    {
+      "id": "cloudflare_workers",
+      "display_name": "Cloudflare Workers",
+      "byoi_support": "none",
+      "notes": "OUT OF SCOPE. No VM capability at all. Isolate model (V8). No OS, no filesystem persistence, no BSD or Linux. Cloudflare Images product is CDN image optimization, not VM images."
+    },
+    {
+      "id": "render",
+      "display_name": "Render",
+      "byoi_support": "none",
+      "byoi_format": [
+        "oci-container"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "OUT OF SCOPE for genoa BSD/VM deploy. Docker-only. No VM image ingestion. No custom OS."
+    },
+    {
+      "id": "railway",
+      "display_name": "Railway",
+      "byoi_support": "none",
+      "byoi_format": [
+        "oci-container"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "OUT OF SCOPE for genoa BSD/VM deploy. Container-only."
+    },
+    {
+      "id": "northflank",
+      "display_name": "Northflank",
+      "byoi_support": "none",
+      "byoi_format": [
+        "oci-container"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "OUT OF SCOPE for genoa BSD/VM deploy. BYOC != BYOI. Container-only for workload deployment."
+    },
+    {
+      "id": "koyeb",
+      "display_name": "Koyeb",
+      "byoi_support": "none",
+      "byoi_format": [
+        "oci-container"
+      ],
+      "architectures_supported": [
+        "amd64",
+        "aarch64"
+      ],
+      "notes": "OUT OF SCOPE for genoa BSD/VM deploy. Interesting architecture (Firecracker + Nomad) but container-only interface. No BYOI path."
+    },
+    {
+      "id": "arp_networks",
+      "display_name": "ARP Networks",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw"
+      ],
+      "bsd_native_support": [
+        "freebsd",
+        "openbsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "FreeBSD/OpenBSD specialist since 2008. Small but highly BSD-competent. Kernel compilation allowed. ZFS-capable. 10% discount for semi-annual/annual. US-based."
+    },
+    {
+      "id": "tornado_vps",
+      "display_name": "Tornado VPS",
+      "byoi_support": "console",
+      "byoi_format": [
+        "iso"
+      ],
+      "bsd_native_support": [
+        "freebsd",
+        "openbsd",
+        "netbsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Xen hypervisor (rare among modern providers). Active FreeBSD, OpenBSD, NetBSD releases as of Dec 2025. Very small provider. NetBSD only under HVM not PV."
+    },
+    {
+      "id": "buyvm_bsd",
+      "display_name": "BuyVM (BSD-focused view)",
+      "byoi_support": "console",
+      "byoi_format": [
+        "iso"
+      ],
+      "bsd_native_support": [
+        "freebsd",
+        "openbsd",
+        "netbsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Duplicate of buyvm for Tier 5 BSD tracking. DDoS protection notable feature. Las Vegas NV, New York NY, Luxembourg locations."
+    },
+    {
+      "id": "orionvm",
+      "display_name": "OrionVM",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw"
+      ],
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Anthony Woodward appointed chairman March 2025 - active company. Australia-headquartered. FreeBSD on equal footing with Linux. AI infrastructure pivot with Blaize partnership."
+    },
+    {
+      "id": "boxybsd",
+      "display_name": "BoxyBSD",
+      "byoi_support": "none",
+      "bsd_native_support": [
+        "freebsd",
+        "openbsd",
+        "netbsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Free and no credit card required. Not suitable for production genoa deployments. Excellent for FreeBSD/OpenBSD/NetBSD/DragonFlyBSD testing. Proxmox migration announced 2024-2025."
+    },
+    {
+      "id": "mythic_beasts",
+      "display_name": "Mythic Beasts",
+      "byoi_support": "api",
+      "byoi_format": [
+        "raw"
+      ],
+      "architectures_supported": [
+        "aarch64"
+      ],
+      "deployment_path": "byoi-api",
+      "notes": "Unique: Raspberry Pi (aarch64) dedicated nodes as a service. Not VMs - actual Pi hardware. FreeBSD on Pi is possible but not stock. UK-based (Cambridge). From \u00a37.14/mo."
+    },
+    {
+      "id": "m5hosting",
+      "display_name": "M5 Hosting",
+      "byoi_support": "console",
+      "bsd_native_support": [
+        "freebsd"
+      ],
+      "architectures_supported": [
+        "amd64"
+      ],
+      "notes": "Small specialized provider, FreeBSD and Linux/BSD dedicated servers. Not API-automated. Not suitable for genoa automated dispatch without custom integration. US West Coast only."
+    },
+    {
+      "id": "macstadium",
+      "display_name": "MacStadium (Orka)",
+      "byoi_support": "api",
+      "byoi_format": [
+        "oci-container"
+      ],
+      "architectures_supported": [
+        "aarch64"
+      ],
+      "notes": "Apple Silicon aarch64 only. HVF hypervisor (Apple Hypervisor.framework). macOS-only VMs. Not suitable for BSD/Linux genoa deployments. macOS license requires 24h minimum."
+    }
+  ]
+}

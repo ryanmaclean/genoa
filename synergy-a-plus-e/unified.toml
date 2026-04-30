@@ -1,0 +1,152 @@
+# unified.toml — Combined A+E manifest format
+# Describes both an image build (Option A / genoa) AND a cloud deployment (Option E / lsd)
+# in a single file. The [image] section is valid genoa v1 input; the [deploy] section
+# is a translation of the lsd manifest. Neither tool currently reads this format natively —
+# bridge.nu splits it into per-tool inputs and invokes each CLI.
+#
+# For an LM this is the target UX:
+#   nu bridge.nu plan unified.toml
+#   → emits a structured JSON plan: A build steps + E trampoline steps + artifact handoff
+#
+# Schema: synergy/v0 (this repo, not stable)
+# SPDX-License-Identifier: BSD-2-Clause
+
+unified_schema_version = "v0.1.0"
+description            = "FreeBSD 15 aarch64 on Hetzner CAX11 with ii-agent baked in"
+
+# ── Section A: genoa image build (maps 1:1 to option-a-smolbsd manifest.v1.json) ──────
+[image]
+name        = "smolbsd-hetzner-iiagent"
+version     = "v0.1.0"
+format      = "raw"        # E's bootstrap.sh dd-writes raw images to the target disk
+size_mb     = 4096
+output_dir  = "./out/image"
+description = "Minimal FreeBSD 15.0 aarch64 with ii-agent, for Hetzner CAX11"
+
+[target]
+os         = "freebsd"
+os_version = "15.0-RELEASE"
+arch       = "aarch64"
+platform   = "qemu"        # closest to CAX11's virtio-mmio environment
+build_host = "builder@localhost:2225"
+
+[kernel]
+config      = "GENERIC"    # GENERIC is safe for QEMU/CAX11 virtio; SMOLBSD is RPi-specific
+strip_debug = true
+extra_options = [
+  "nodevice wlan",
+  "nodevice wlan_amrr",
+  "nodevice wlan_ccmp",
+  "nodevice wlan_tkip",
+  "nodevice wlan_xauth",
+  "nodevice sound",
+  "nodevice snd_hda",
+  "nooptions SND_SUPPORT",
+  "nooptions WITNESS",
+  "nooptions INVARIANTS",
+  "nooptions INVARIANT_SUPPORT",
+]
+
+[packages]
+include = [
+  "FreeBSD-runtime",
+  "FreeBSD-clibs",
+  "FreeBSD-rc",
+  "FreeBSD-utilities",
+  "FreeBSD-pkg-bootstrap",
+  "FreeBSD-libarchive",
+  "FreeBSD-openssl-lib",
+  "FreeBSD-fetch",
+  "FreeBSD-mtree",
+  "FreeBSD-certctl",
+]
+exclude_patterns = [
+  "*-dbg",
+  "*-lib32",
+  "FreeBSD-tests*",
+  "FreeBSD-lldb*",
+  "FreeBSD-devel*",
+  "FreeBSD-src*",
+]
+pkg_repo = "https://pkg.freebsd.org/FreeBSD:15:aarch64/quarterly"
+
+[agent]
+name    = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type   = "gitea_release"
+repo   = "studio/ii-agent"
+tag    = "ii-agent/v0.1.0-freebsd-aarch64"
+asset  = "ii-agent-freebsd-aarch64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[agent.rc_service]
+enabled      = true
+name         = "ii_agent"
+command_args = "-s ergo.local -p 6697 -n hetzner-01 -j '#fleet' --tls"
+
+[agent.config]
+irc_server  = "ergo.local"
+irc_port    = "6697"
+irc_nick    = "hetzner-01"
+irc_channel = "#fleet"
+irc_tls     = "true"
+log_dir     = "/var/log/ii-agent"
+
+[network]
+interface = "vtnet0"    # virtio NIC name inside FreeBSD on CAX11
+mode      = "dhcp"
+hostname  = "hetzner-iiagent-01"
+
+[signing]
+tool = "none"
+
+[metadata]
+campaign        = "smolbsd"
+bake_off_option = "A+E"
+profile         = "hetzner-cax11-iiagent"
+maintainer      = "ryanmaclean"
+
+# ── Section E: lsd deploy config (translates to option-e-lsd manifest.v1.json) ─────────
+# NOTE: [target] above is the GENOA target (build platform).
+# [deploy] below is the LSD target (cloud deployment destination).
+# This is the primary schema conflict: both tools use "target" for different things.
+# bridge.nu resolves this by reading [deploy] → writes a separate lsd manifest.
+[deploy]
+provider = "hetzner-cloud"
+plan     = "cax11"
+region   = "nbg1"
+
+[deploy.base]
+# lsd.base mirrors bsdinstall distribution set selection, not genoa's build config.
+# When mode = "custom_image", lsd skips mfsBSD and uses genoa's raw image instead.
+# This field is the NEW field required to enable A+E synergy.
+os         = "freebsd"
+version    = "15.0-RELEASE"
+arch       = "aarch64"
+filesystem = "zfs"
+
+# Substitution mode: "mfsbsd" (stock E behaviour) | "custom_image" (A+E synergy)
+# When "custom_image": lsd replaces bsdinstall .txz fetch with a dd of the genoa
+# raw image. The bootstrap.sh QEMU invocation swaps the cdrom+bsdinstall.script
+# for a direct disk-image write: `dd if=<image.raw> of=/dev/sda bs=8M`.
+mode = "custom_image"
+
+# Path or URL to the genoa-produced raw image. Populated by bridge.nu from
+# genoa's receipt (receipt.image.output_path). Can be a file:// path (scp'd
+# to rescue host) or an https:// CDN URL if the image is hosted.
+# bridge.nu fills this in from the genoa receipt at plan time.
+custom_image_url    = ""     # filled by bridge.nu from genoa receipt
+custom_image_sha256 = ""     # filled by bridge.nu from genoa receipt hashes.image_sha256
+
+[deploy.network]
+ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key-here"]
+hostname = "hetzner-iiagent-01"
+ipv6     = false    # Hetzner custom images: ipv6 requires manual configuration
+
+[deploy.trust]
+# mfs_image_sha256 is only used when deploy.base.mode = "mfsbsd".
+# When mode = "custom_image", custom_image_sha256 above takes its place.
+mfs_image_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+provenance_url   = "https://mfsbsd.vx.sk/files/iso/15/aarch64/mfsbsd-se-15.0-RELEASE-arm64-aarch64.iso.sha256"

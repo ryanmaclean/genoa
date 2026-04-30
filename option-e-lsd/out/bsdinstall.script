@@ -1,0 +1,123 @@
+#!/bin/sh
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# bsdinstall.script — Non-interactive FreeBSD installation script
+# This runs inside mfsBSD via bsdinstall(8) scripted mode.
+# Template rendered by lsd build; Tera variables substituted before use.
+#
+# Reference: FreeBSD Handbook §2.8 "Using bsdinstall"
+# https://docs.freebsd.org/en/books/handbook/bsdinstall/#using-bsdinstall-scripted
+#
+# Passed into mfsBSD via the seed VFAT image as /bsdinstall.script
+# mfsBSD autorun hook should exec: bsdinstall script /cdrom/bsdinstall.script
+# (or /media/bsdinstall.script depending on mfsBSD mount point)
+
+# ── Distribution selection ────────────────────────────────────────────────────
+export DISTRIBUTIONS="base.txz kernel.txz"
+
+# ── Disk setup ────────────────────────────────────────────────────────────────
+# Target disk as seen inside QEMU (virtio-blk → vtbd0)
+export ZFSBOOT_DISKS="vtbd0"       # e.g. vtbd0
+export ZFSBOOT_POOL_NAME="zroot"
+export ZFSBOOT_BEROOT_NAME="default"
+export ZFSBOOT_BOOTFS_NAME="default"
+
+
+# ZFS layout — mirrors depenguin-run's production setup
+export PARTITIONS="vtbd0 { auto zfs }"
+export ZFSBOOT_POOL_CREATE_OPTIONS="-O checksum=skein -O compression=lz4"
+# [ufs block - skipped]
+# UFS layout for providers with simpler requirements
+export PARTITIONS="vtbd0 { 512K freebsd-boot, 4G freebsd-swap, auto freebsd-ufs }"
+
+
+# ── DNS pre-flight (QEMU SLIRP) ───────────────────────────────────────────────
+# QEMU user-mode networking (SLIRP) assigns the guest 10.0.2.x via DHCP and
+# provides DNS at 10.0.2.3. bsdinstall needs a working resolver BEFORE it can
+# fetch .txz distribution sets over HTTPS.
+#
+# Problem: mfsBSD may not run dhclient on vtnet0 before bsdinstall starts,
+# leaving /etc/resolv.conf empty. bsdinstall's "Fetching" step then hangs
+# silently until it times out.
+#
+# Fix: copy the resolver seed we wrote to the VFAT seed image in bootstrap.sh.
+# The seed image is mounted at /cdrom or /media inside mfsBSD. Try both.
+# Reference: https://wiki.qemu.org/Documentation/Networking#User_Networking_(SLIRP)
+# Reference: https://docs.freebsd.org/en/books/handbook/ports/ (pkg under SLIRP)
+for seed_mount in /cdrom /media /mnt/seed; do
+    if [ -f "$seed_mount/resolv.conf.qemu-slirp" ]; then
+        cp "$seed_mount/resolv.conf.qemu-slirp" /etc/resolv.conf
+        echo "[lsd] Installed QEMU SLIRP resolver from $seed_mount/resolv.conf.qemu-slirp" >&2
+        break
+    fi
+done
+
+# Fallback: if dhclient already ran and /etc/resolv.conf is populated, trust it.
+# Otherwise write the SLIRP resolver directly.
+if ! grep -q '^nameserver' /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 10.0.2.3" > /etc/resolv.conf
+    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+    echo "[lsd] Fallback: wrote QEMU SLIRP resolver directly to /etc/resolv.conf" >&2
+fi
+
+# ── Mirror selection ──────────────────────────────────────────────────────────
+# Use the GeoDNS mirror — mfsBSD has working DNS via QEMU user networking
+# Note: this is fetched by bsdinstall(8), not pkg(8). The .txz sets are
+# downloaded directly over HTTPS; no pkg bootstrap is required or performed.
+export BSDINSTALL_DISTSITE="https://download.freebsd.org/releases/arm64/aarch64/arm64/aarch64/15.0-RELEASE"
+
+# ── System configuration ──────────────────────────────────────────────────────
+#!/bin/sh
+# Called by bsdinstall after extract — configure the freshly installed system
+
+hostname="bsd-cax11-001"
+
+# SSH keys
+mkdir -p /mnt/root/.ssh
+chmod 700 /mnt/root/.ssh
+cat > /mnt/root/.ssh/authorized_keys << 'SSH_EOF'
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key-here
+SSH_EOF
+chmod 600 /mnt/root/.ssh/authorized_keys
+
+# Enable SSH daemon
+echo 'sshd_enable="YES"' >> /mnt/etc/rc.conf
+echo 'sshd_flags="-oPermitRootLogin=prohibit-password"' >> /mnt/etc/rc.conf
+
+# Hostname
+echo "hostname=\"$hostname\"" >> /mnt/etc/rc.conf
+
+# Networking — DHCP on first interface (virtio NIC → vtnet0 in BSD)
+echo 'ifconfig_vtnet0="DHCP"' >> /mnt/etc/rc.conf
+echo 'ifconfig_vtnet0_ipv6="inet6 accept_rtadv"' >> /mnt/etc/rc.conf
+
+
+echo 'ipv6_activate_all_interfaces="YES"' >> /mnt/etc/rc.conf
+
+
+# NTP
+echo 'ntpd_enable="YES"' >> /mnt/etc/rc.conf
+echo 'ntpd_sync_on_start="YES"' >> /mnt/etc/rc.conf
+
+# Disable sendmail
+echo 'sendmail_enable="NONE"' >> /mnt/etc/rc.conf
+
+# loader.conf — virtio-mmio hint for Hetzner CAX ARM64
+
+echo 'virtio_mmio_load="YES"' >> /mnt/boot/loader.conf
+echo 'hw.vtnet.csum_disable=1' >> /mnt/boot/loader.conf
+
+
+# Filesystem tweaks
+
+echo 'zfs_enable="YES"' >> /mnt/etc/rc.conf
+echo 'vfs.root.mountfrom="zfs:zroot/ROOT/default"' >> /mnt/boot/loader.conf
+
+
+# Signal mfsBSD that install is done — write a marker file
+echo "lsd-installed: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /mnt/root/.lsd-install-complete
+echo "lsd-hostname: $hostname" >> /mnt/root/.lsd-install-complete
+echo "lsd-version: 0.1.0" >> /mnt/root/.lsd-install-complete
+
+echo "[lsd/bsdinstall] Installation complete — rebooting" >&2
+# bsdinstall handles the actual reboot

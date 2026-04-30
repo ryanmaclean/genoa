@@ -1,0 +1,21 @@
+[package]
+name    = "genoa-init"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# This is the kernel-side binary entry point.
+# When compiled for x86_64-unknown-hermit, `_start` is the linker entry point.
+# When compiled on the host (cargo check), it builds as a normal binary.
+
+[[bin]]
+name = "genoa-init"
+path = "src/main.rs"
+
+[dependencies]
+genoa-agent  = { path = "../genoa-agent" }
+genoa-config = { path = "../genoa-config" }
+
+[features]
+default = ["std"]
+std = ["genoa-agent/std"]

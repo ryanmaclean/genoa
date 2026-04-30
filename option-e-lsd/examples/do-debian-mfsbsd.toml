@@ -1,0 +1,51 @@
+# lsd manifest — DigitalOcean Custom Image + FreeBSD 15.0-RELEASE via QEMU trampoline
+# Provider: DigitalOcean (custom image / snapshot import)
+# Strategy: Upload a qcow2/raw FreeBSD image as a DO custom image
+#
+# DigitalOcean custom-image quirks:
+#   - Custom images are uploaded as raw/qcow2 via DO API or Console
+#   - DO does NOT support IPv6 on custom-image Droplets in many regions
+#     (IPv6 must be explicitly enabled at Droplet creation; networking config is NOT injected
+#      the same way as official DO images — the installer must configure it manually)
+#   - THIS IS A HARD PROVIDER LIMIT: lsd describe will always emit an IPv6 warning for DO
+#   - Disk: /dev/vda (virtio-blk); ensure the image fits in the Droplet's disk
+#   - IMDS: http://169.254.169.254/ (DigitalOcean Metadata API v1)
+#           http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address
+#   - SSH keys: http://169.254.169.254/metadata/v1/public-keys
+#   - Rescue: DO does not have a per-Droplet "rescue OS" mode for custom images;
+#             use Recovery ISO from Droplet console (limited) or rebuild Droplet
+#   - The QEMU trampoline is run from a standard Debian/Ubuntu Droplet, then the
+#     resulting raw disk image is exported and uploaded as a custom image
+#
+# WARNING: DO custom images have a size limit of 100 GB compressed.
+# WARNING: FreeBSD is not officially supported — no DO agent, no metrics, no monitoring.
+#
+# Status: trampoline spec'd, IPv6 warning baked in, NOT exercised in this harness
+
+lsd_schema_version = "1.0.0"
+
+[target]
+provider = "digitalocean"
+plan     = "s-1vcpu-2gb"
+region   = "nyc3"
+
+[base]
+os         = "freebsd"
+version    = "15.0-RELEASE"
+arch       = "amd64"
+filesystem = "ufs"
+mfsbsd_url = "https://mfsbsd.vx.sk/files/iso/15/amd64/mfsbsd-se-15.0-RELEASE-amd64.iso"
+
+[network]
+ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key-here"]
+hostname = "bsd-do-001"
+# IPv6 explicitly false — DO custom images do not auto-configure IPv6
+# lsd describe will emit: digitalocean-custom-images-no-ipv6 warning
+ipv6 = false
+
+[trust]
+# PLACEHOLDER sha256 — replace with real digest before production use
+# Obtain from: https://mfsbsd.vx.sk/files/iso/15/amd64/
+mfs_image_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+provenance_url   = "https://mfsbsd.vx.sk/files/iso/15/amd64/mfsbsd-se-15.0-RELEASE-amd64.iso.sha256"
+callback_url     = "https://your-webhook.example.com/lsd/installed"

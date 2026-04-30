@@ -1,0 +1,255 @@
+{
+  "version": "2",
+  "metadata": {
+    "genoa_manifest_id": "ai-assistant-edge-v1",
+    "genoa_schema_version": "v1",
+    "generated_at": "2026-04-30T14:15:58Z",
+    "base": "alpine-3.20",
+    "arch": "aarch64"
+  },
+  "pipelines": [
+    {
+      "name": "build",
+      "runner": "org.osbuild.alpine",
+      "stages": [
+        {
+          "type": "org.osbuild.alpine.repos",
+          "options": {
+            "repos": [
+              {
+                "id": "alpine-main",
+                "baseurl": "https://dl-cdn.alpinelinux.org/alpine/v3.20/main",
+                "mirrorlist": null,
+                "gpgkey": "https://dl-cdn.alpinelinux.org/alpine/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub",
+                "check_gpg": true
+              },
+              {
+                "id": "alpine-community",
+                "baseurl": "https://dl-cdn.alpinelinux.org/alpine/v3.20/community",
+                "mirrorlist": null,
+                "gpgkey": "https://dl-cdn.alpinelinux.org/alpine/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub",
+                "check_gpg": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "os",
+      "runner": "org.osbuild.alpine",
+      "stages": [
+        {
+          "type": "org.osbuild.alpine.apk",
+          "options": {
+            "packages": [
+              "alpine-base",
+              "busybox",
+              "openssl",
+              "ca-certificates",
+              "curl",
+              "cloud-init",
+              "e2fsprogs",
+              "dosfstools",
+              "linux-firmware-none",
+              "linux-rpi",
+              "raspberrypi-bootloader",
+              "u-boot-raspberrypi",
+              "openssh",
+              "sudo",
+              "bash",
+              "git",
+              "jq",
+              "python3",
+              "py3-pip",
+  - htop
+  - iotop
+  - tcpdump
+  - nmap
+  - tmux
+  - vim
+  - python3-venv
+  - nodejs
+  - npm
+
+{% endif %}
+
+            ]
+          }
+        },
+        {
+          "type": "org.osbuild.systemd",
+          "options": {
+            "enabled_services": [
+              "cloud-init.service",
+              "cloud-init-local.service",
+              "cloud-config.service",
+              "cloud-final.service",
+              "sshd",
+              "networking"
+            ],
+            "disabled_services": []
+          }
+        },
+        {
+          "type": "org.osbuild.sysconfig",
+          "options": {
+            "kernel_arguments": "console=tty1 console=ttyAMA0,115200 root=/dev/mmcblk0p2 rootwait"
+          }
+        },
+        {
+          "type": "org.osbuild.cloud-init",
+          "options": {
+            "config": {
+              "datasource_list": ["NoCloud", "None"],
+              "datasource": {
+                "NoCloud": {
+                  "seedfrom": null,
+                  "fs_label": "cidata"
+                }
+              },
+              "network": {
+                "config": "disabled"
+              }
+            }
+          }
+        }{% if dd_enabled | default(value=true) %},
+        {
+          "type": "org.osbuild.copy",
+          "options": {
+            "paths": [
+              {
+                "from": "input://dd-install/install_script_agent7.sh",
+                "to": "tree:///usr/local/sbin/dd-install.sh"
+              }
+            ]
+          },
+          "inputs": {
+            "dd-install": {
+              "type": "org.osbuild.curl",
+              "origin": "org.osbuild.source",
+              "options": {
+                "url": "https://install.datadoghq.com/scripts/install_script_agent7.sh"
+              }
+            }
+          }
+        }
+{% endif %}
+
+      ]
+    },
+    {
+      "name": "image",
+      "stages": [
+        {
+          "type": "org.osbuild.truncate",
+          "options": {
+            "filename": "disk.img",
+            "size": "20073741824"
+          }
+        },
+        {
+          "type": "org.osbuild.parted",
+          "options": {
+            "partitions": [
+              {
+                "number": 1,
+                "start": "1MiB",
+                "end": "256MiB",
+                "type": "fat32",
+                "name": "boot",
+                "bootable": true
+              },
+              {
+                "number": 2,
+                "start": "256MiB",
+                "end": "100%",
+                "type": "ext4",
+                "name": "root"
+              }
+            ]
+          }
+        },
+        {
+          "type": "org.osbuild.mkfs.fat",
+          "options": {
+            "volid": "BOOT",
+            "label": "boot"
+          },
+          "devices": {
+            "device": {
+              "type": "org.osbuild.loopback",
+              "options": { "filename": "disk.img", "partition": 1 }
+            }
+          }
+        },
+        {
+          "type": "org.osbuild.mkfs.ext4",
+          "options": {
+            "uuid": "44444444-4444-4444-4444-444444444444",
+            "label": "root"
+          },
+          "devices": {
+            "device": {
+              "type": "org.osbuild.loopback",
+              "options": { "filename": "disk.img", "partition": 2 }
+            }
+          }
+        },
+        {
+          "type": "org.osbuild.copy",
+          "options": {
+            "paths": [
+              { "from": "input://root-tree/", "to": "mount://root/" }
+            ]
+          },
+          "inputs": {
+            "root-tree": {
+              "type": "org.osbuild.tree",
+              "origin": "org.osbuild.pipeline",
+              "references": ["name:os"]
+            }
+          },
+          "mounts": [
+            {
+              "name": "root",
+              "type": "org.osbuild.ext4",
+              "source": { "type": "org.osbuild.loopback", "options": { "filename": "disk.img", "partition": 2 } },
+              "target": "/"
+            },
+            {
+              "name": "boot",
+              "type": "org.osbuild.fat",
+              "source": { "type": "org.osbuild.loopback", "options": { "filename": "disk.img", "partition": 1 } },
+              "target": "/boot"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "qcow2",
+      "stages": [
+        {
+          "type": "org.osbuild.qemu",
+          "options": {
+            "filename": "ai-assistant-edge-v1-alpine-aarch64.qcow2",
+            "format": {
+              "type": "qcow2",
+              "compression": true,
+              "compat": "1.1"
+            }
+          },
+          "inputs": {
+            "image": {
+              "type": "org.osbuild.files",
+              "origin": "org.osbuild.pipeline",
+              "references": { "name:image": { "file": "disk.img" } }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "sources": {}
+}

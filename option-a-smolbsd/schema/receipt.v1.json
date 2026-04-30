@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ryanmaclean/genoa/option-a-smolbsd/schema/receipt.v1.json",
+  "title": "genoa receipt",
+  "description": "v1 attestation envelope emitted by `genoa build`. Every image ships with a co-located receipt. Consumers: fleet-eval, verify subcommand, any downstream pipeline.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["schema_version", "receipt_id", "built_at", "image", "build", "agent", "hashes", "claims"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1",
+      "description": "Receipt schema version. Consumers must reject receipts with unknown versions."
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+      "description": "UUIDv4 uniquely identifying this receipt. Stable across re-verifications."
+    },
+    "built_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp of when the build completed."
+    },
+    "image": {
+      "type": "object",
+      "description": "Identity of the produced image.",
+      "required": ["name", "version", "format", "output_path"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "format": { "type": "string", "enum": ["qcow2", "raw", "vmdk"] },
+        "output_path": {
+          "type": "string",
+          "description": "Absolute path to the image file on the build host at build time."
+        },
+        "size_bytes": {
+          "type": "integer",
+          "description": "Actual byte size of the image file on disk."
+        },
+        "provisioned_mb": {
+          "type": "integer",
+          "description": "Provisioned image size in MiB (virtual disk size)."
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "description": "Build environment provenance.",
+      "required": ["host", "builder_type", "os_version", "arch", "genoa_version"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "Hostname of the machine that ran the build."
+        },
+        "builder_type": {
+          "type": "string",
+          "enum": ["local", "fb-vm-24", "fb13-vm", "fb14-vm", "native-fleet-pi", "zig-cc", "dry-run"],
+          "description": "Build environment type. 'dry-run' when no actual build occurred."
+        },
+        "os_version": {
+          "type": "string",
+          "description": "OS version on the build host. Example: 'FreeBSD 15.0-RELEASE'."
+        },
+        "arch": {
+          "type": "string",
+          "description": "CPU architecture of the build host. Example: 'aarch64'."
+        },
+        "genoa_version": {
+          "type": "string",
+          "description": "Version of the genoa CLI that produced this receipt."
+        },
+        "kernel_config": {
+          "type": "string",
+          "description": "Kernel KERNCONF used. Example: 'SMOLBSD'."
+        },
+        "platform": {
+          "type": "string",
+          "description": "Target platform. Example: 'rpi5', 'qemu'."
+        },
+        "dry_run": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, no image was actually produced; receipt describes the planned build."
+        },
+        "build_commands": {
+          "type": "array",
+          "description": "Ordered list of commands that were (or would be) executed. Present in both real and dry-run receipts.",
+          "items": {
+            "type": "object",
+            "required": ["step", "cmd"],
+            "additionalProperties": false,
+            "properties": {
+              "step": { "type": "integer" },
+              "label": { "type": "string" },
+              "cmd": { "type": "string" },
+              "would_run": {
+                "type": "boolean",
+                "description": "True in dry-run mode: command would be executed but was not."
+              }
+            }
+          }
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "description": "Agent payload provenance.",
+      "required": ["name", "version", "install_path"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "install_path": { "type": "string" },
+        "source_url": { "type": "string", "format": "uri" },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$",
+          "description": "SHA-256 of the fetched agent binary before installation."
+        },
+        "rc_service": { "type": "string", "description": "rc.d service name, if configured." }
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "description": "Content hashes for integrity verification.",
+      "required": ["image_sha256", "manifest_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "image_sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$",
+          "description": "SHA-256 of the output image file. Use 'PLACEHOLDER_DRY_RUN' when dry_run=true."
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^([a-fA-F0-9]{64}|PLACEHOLDER_DRY_RUN)$",
+          "description": "SHA-256 of the input manifest TOML file as-read."
+        },
+        "kernel_config_sha256": {
+          "type": "string",
+          "pattern": "^([a-fA-F0-9]{64}|PLACEHOLDER_DRY_RUN)$",
+          "description": "SHA-256 of the deployed kernel config file, if applicable."
+        },
+        "release_conf_sha256": {
+          "type": "string",
+          "pattern": "^([a-fA-F0-9]{64}|PLACEHOLDER_DRY_RUN)$",
+          "description": "SHA-256 of the release conf (smolbsd-qemu.conf) injected into the build."
+        }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "description": "Signing information. Present only when signing.tool != 'none'.",
+      "additionalProperties": false,
+      "properties": {
+        "tool": { "type": "string", "enum": ["signify"] },
+        "public_key": { "type": "string", "description": "Base64-encoded signify public key." },
+        "signature": { "type": "string", "description": "Base64-encoded signify signature over image_sha256." },
+        "placeholder": {
+          "type": "boolean",
+          "description": "If true, signing was not actually performed (stub mode). Never trust a placeholder signature."
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "description": "Verifiable claims about the image. Each claim can be checked by fleet-eval.",
+      "items": {
+        "type": "object",
+        "required": ["claim", "probe", "expect", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "claim": { "type": "string", "description": "Human-readable statement of what is asserted." },
+          "probe": { "type": "string", "description": "Shell command or fleet-eval probe expression to verify the claim." },
+          "expect": { "type": "string", "description": "Expected output / exit condition." },
+          "status": {
+            "type": "string",
+            "enum": ["verified", "unverified", "skipped", "failed"],
+            "description": "Verification status at receipt-emit time. 'unverified' for dry-run."
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 timestamp of when this claim was verified, if status=verified."
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Pass-through metadata from the manifest.",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

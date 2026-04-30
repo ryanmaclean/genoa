@@ -1,0 +1,185 @@
+{
+  "schema_version": "v1",
+  "receipt_id": "a1b2c3d4-e5f6-4a7b-8c9d-smolbsd-qemu",
+  "built_at": "2026-04-30T14:09:28Z",
+  "image": {
+    "name": "smolbsd-qemu-x86_64",
+    "version": "v0.1.0",
+    "format": "qcow2",
+    "output_path": "./out/smolbsd-qemu-x86_64-v0.1.0.qcow2",
+    "size_bytes": 1024,
+    "provisioned_mb": 4096
+  },
+  "build": {
+    "host": "mbp-m1.local",
+    "builder_type": "local",
+    "os_version": "Darwin 25.3.0",
+    "arch": "arm64",
+    "genoa_version": "0.1.0",
+    "kernel_config": "SMOLBSD",
+    "platform": "qemu",
+    "dry_run": false,
+    "build_commands": [
+      {
+        "step": 1,
+        "label": "prepare_output_dir",
+        "cmd": "mkdir -p ./out",
+        "would_run": true,
+        "real": true,
+        "description": "Create output directory for image and receipt."
+      },
+      {
+        "step": 2,
+        "label": "verify_src_tree",
+        "cmd": "test -d /usr/src && freebsd-version -k || echo WARN: no src tree",
+        "would_run": true,
+        "real": true,
+        "description": "Check FreeBSD source tree is present at /usr/src."
+      },
+      {
+        "step": 3,
+        "label": "place_kernel_config",
+        "cmd": "cp SMOLBSD.conf /usr/src/sys/amd64/conf/SMOLBSD 2>/dev/null || echo 'INFO: using existing SMOLBSD config'",
+        "would_run": true,
+        "real": true,
+        "description": "Deploy kernel config delta to /usr/src/sys/amd64/conf/SMOLBSD."
+      },
+      {
+        "step": 4,
+        "label": "place_release_conf",
+        "cmd": "cp smolbsd-qemu.conf /usr/src/release/tools/smolbsd-qemu.conf",
+        "would_run": true,
+        "real": true,
+        "description": "Deploy release config (package filter + rc.conf fragment) into FreeBSD source tree."
+      },
+      {
+        "step": 5,
+        "label": "buildworld",
+        "cmd": "make -j4 -C /usr/src buildworld KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64",
+        "would_run": false,
+        "real": false,
+        "stub_reason": "STUB: buildworld takes 2–8 hours on typical hardware. Run manually on a FreeBSD build host.",
+        "description": "Cross-compile FreeBSD world for target arch.",
+        "action": "would-run"
+      },
+      {
+        "step": 6,
+        "label": "buildkernel",
+        "cmd": "make -j4 -C /usr/src buildkernel KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64",
+        "would_run": false,
+        "real": false,
+        "stub_reason": "STUB: buildkernel takes 30–90 minutes on typical hardware. Run manually on a FreeBSD build host.",
+        "description": "Compile SMOLBSD kernel for amd64.",
+        "action": "would-run"
+      },
+      {
+        "step": 7,
+        "label": "pkgbase_packages",
+        "cmd": "make -j4 -C /usr/src packages TARGET=amd64 TARGET_ARCH=amd64",
+        "would_run": false,
+        "real": false,
+        "stub_reason": "STUB: pkgbase package build takes 30–60 minutes.",
+        "action": "would-run"
+      },
+      {
+        "step": 8,
+        "label": "build_vm_image",
+        "cmd": "make -C /usr/src/release vm-image KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64 WITH_PKGBASE=yes VMFORMATS=qcow2 VMSIZE=4096m CLOUDWARE_CONF=/usr/src/release/tools/smolbsd-qemu.conf",
+        "would_run": false,
+        "real": false,
+        "stub_reason": "STUB: vm-image build requires completed buildworld/buildkernel. Output goes to /usr/obj/amd64.amd64/usr/src/release/vm/",
+        "action": "would-run"
+      },
+      {
+        "step": 9,
+        "label": "fetch_agent",
+        "cmd": "fetch -o ./out/none '(agent-url-stubbed)'",
+        "would_run": false,
+        "real": false,
+        "stub_reason": "STUB: agent fetch from (agent-url-stubbed) — verify sha256 after fetch.",
+        "action": "would-run",
+        "sha256_expected": "not_set"
+      },
+      {
+        "step": 10,
+        "label": "install_agent_into_image",
+        "cmd": "# Mount image, copy agent binary to /usr/local/bin/none, install rc.d script, unmount",
+        "would_run": false,
+        "real": false,
+        "stub_reason": "STUB: requires mounted image. In real build, vm_extra_pre_umount() hook handles this.",
+        "action": "would-run"
+      },
+      {
+        "step": 11,
+        "label": "copy_image_to_output",
+        "cmd": "cp /usr/obj/amd64.amd64/usr/src/release/vm/FreeBSD-*.qcow2 ./out/smolbsd-qemu-x86_64-v0.1.0.qcow2",
+        "would_run": false,
+        "real": false,
+        "stub_reason": "STUB: depends on completed vm-image step.",
+        "action": "would-run"
+      },
+      {
+        "step": 12,
+        "label": "emit_receipt",
+        "cmd": "nu genoa.nu _emit_receipt ./out/smolbsd-qemu-x86_64-v0.1.0.qcow2 > ./out/smolbsd-qemu-x86_64-v0.1.0.receipt.json",
+        "would_run": true,
+        "real": true,
+        "description": "Emit attestation receipt JSON alongside the image."
+      }
+    ]
+  },
+  "agent": {
+    "name": "none",
+    "version": "v0.0.0",
+    "install_path": "/usr/local/bin",
+    "source_url": "(stubbed)",
+    "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rc_service": null
+  },
+  "hashes": {
+    "image_sha256": "dabd2e7186d0ba398ce8b239b35a603915e061abe6fc47bb2ab9ee08c05d093a",
+    "manifest_sha256": "1addb8f5cccb766fefbcd57349548b473175b2bc67d56ea07a4f392369313aab",
+    "kernel_config_sha256": "PLACEHOLDER_DRY_RUN",
+    "release_conf_sha256": "PLACEHOLDER_DRY_RUN"
+  },
+  "signing": {
+    "tool": "none",
+    "placeholder": true
+  },
+  "claims": [
+    {
+      "claim": "Image file exists and is non-empty",
+      "probe": "test -s ./out/smolbsd-qemu-x86_64-v0.1.0.qcow2 && echo EXISTS",
+      "expect": "EXISTS",
+      "status": "verified"
+    },
+    {
+      "claim": "Agent none is installed at /usr/local/bin",
+      "probe": "ssh -p 22 root@<image_ip> 'test -x /usr/local/bin/none && echo AGENT_OK'",
+      "expect": "AGENT_OK",
+      "status": "unverified"
+    },
+    {
+      "claim": "Image boots to login prompt within 30 seconds",
+      "probe": "expect-script: wait for 'login:' within 30s on serial console",
+      "expect": "login:",
+      "status": "unverified"
+    },
+    {
+      "claim": "Image sha256 matches receipt",
+      "probe": "sha256sum ./out/smolbsd-qemu-x86_64-v0.1.0.qcow2 | awk '{{print $1}}' | grep -Fxq HASH",
+      "expect": "0 (exit code)",
+      "status": "verified"
+    }
+  ],
+  "metadata": {
+    "campaign": "smolbsd",
+    "bake_off_option": "A",
+    "profile": "qemu-x86_64",
+    "phase": "I",
+    "size_budget_mib": "512",
+    "artifact_goal_mib": "128",
+    "maintainer": "ryanmaclean",
+    "launch_cmd": "qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -smp 2 -drive file=out/smolbsd-qemu-x86_64-v0.1.0.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci,hostfwd=tcp::2230-:22 -serial unix:/tmp/smolbsd.sock,server,nowait -nographic"
+  }
+}

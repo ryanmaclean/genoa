@@ -1,0 +1,115 @@
+# genoa.toml — Agent-Host Image Manifest
+# Schema: https://genoa.dev/v1/schemas/manifest.v1.json
+# Spec:    https://genoa.dev/v1/spec/genoa-v1.md
+#
+# This file is embedded at /etc/genoa/genoa.toml on the image.
+# At boot, it is parsed and served as JSON at /.well-known/genoa.json.
+# Agents discover the host by fetching /.well-known/genoa.json.
+
+[genoa]
+spec_version = "1.0.0"
+schema_url   = "https://genoa.dev/v1/schemas/manifest.v1.json"
+
+[image]
+id             = "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+name           = "smolbsd-agent-host"
+version        = "0.1.0"
+architecture   = "amd64"
+os             = "freebsd"
+os_version     = "14.2"
+build_timestamp = "2026-04-30T12:00:00Z"
+source_repo    = "https://github.com/ryanmaclean/genoa"
+source_commit  = "abc123def456abc123def456abc123def456abc1"
+
+[agent_runtime]
+type              = "mcp-server"
+version           = "1.0.0"
+endpoint          = "http://localhost:8080"
+protocol_versions = ["2025-11-05"]
+
+[agent_runtime.auth]
+type = "none"
+
+[[capabilities]]
+name        = "execute_shell_command"
+description = "Execute a shell command on the host. Restricted to /bin and /usr/bin by pledge policy. Returns stdout, stderr, and exit code."
+
+[capabilities.inputSchema]
+type = "object"
+
+[capabilities.inputSchema.properties.command]
+type        = "string"
+description = "Shell command to execute."
+
+[capabilities.inputSchema.properties.timeout_seconds]
+type    = "integer"
+minimum = 1
+maximum = 300
+default = 30
+
+[capabilities.inputSchema.required]
+# TOML doesn't support bare arrays in subtables directly; use inline form
+# required = ["command"]
+
+[capabilities.provenance]
+source      = "built-in"
+trust       = "attested"
+package_id  = "SPDXRef-shell-executor-1.0.0"
+added_at    = "2026-04-30T12:00:00Z"
+added_by    = "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"
+
+[capabilities.annotations]
+"dev.genoa.capability.category"   = "shell"
+"dev.genoa.capability.risk_level" = "high"
+
+[[capabilities]]
+name        = "read_file"
+description = "Read a file from the host filesystem. Restricted to /etc/genoa/ and /var/log/genoa/ by pledge policy."
+
+[capabilities.inputSchema]
+type = "object"
+
+[capabilities.inputSchema.properties.path]
+type        = "string"
+description = "Absolute file path to read."
+
+[capabilities.provenance]
+source     = "built-in"
+trust      = "attested"
+package_id = "SPDXRef-file-reader-1.0.0"
+added_at   = "2026-04-30T12:00:00Z"
+added_by   = "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"
+
+[capabilities.annotations]
+"dev.genoa.capability.category"   = "filesystem"
+"dev.genoa.capability.risk_level" = "medium"
+
+[[capabilities]]
+name        = "get_system_metrics"
+description = "Return current CPU, memory, and disk usage metrics in structured JSON."
+
+[capabilities.inputSchema]
+type = "object"
+
+[capabilities.provenance]
+source     = "built-in"
+trust      = "attested"
+package_id = "SPDXRef-metrics-collector-1.0.0"
+added_at   = "2026-04-30T12:00:00Z"
+added_by   = "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"
+
+[capabilities.annotations]
+"dev.genoa.capability.category"   = "observability"
+"dev.genoa.capability.risk_level" = "low"
+
+[attestation_policy]
+slsa_level          = 2
+signer              = "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml@refs/heads/main"
+transparency_log    = "https://rekor.sigstore.dev"
+require_attestation = false
+
+[sbom]
+format      = "spdx-2.3"
+digest      = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+url         = "https://github.com/ryanmaclean/genoa/releases/download/v0.1.0/sbom.spdx.json"
+embed_path  = "/etc/genoa/sbom.spdx.json"

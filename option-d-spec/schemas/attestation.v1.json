@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genoa.dev/v1/schemas/attestation.v1.json",
+  "title": "genoa Attestation v1",
+  "description": "in-toto v1 Statement (https://github.com/in-toto/attestation/blob/v1.0/spec/v1.0/statement.md) with predicateType 'https://genoa.dev/AgentHost/v1'. The subject is the image digest. The predicate carries genoa-specific fields: image identity, capability claims, SLSA build level, and SBOM digest.",
+  "type": "object",
+  "required": ["_type", "subject", "predicateType", "predicate"],
+  "additionalProperties": false,
+  "properties": {
+    "_type": {
+      "type": "string",
+      "const": "https://in-toto.io/Statement/v1",
+      "description": "in-toto Statement type URI. Fixed constant per in-toto v1 spec."
+    },
+    "subject": {
+      "type": "array",
+      "description": "Image subject(s). Each entry MUST include the OCI digest of the image. Follows in-toto ResourceDescriptor.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "digest"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Image name or URI.",
+            "examples": ["smolbsd-agent-host:0.1.0"]
+          },
+          "digest": {
+            "type": "object",
+            "description": "Digest map per in-toto ResourceDescriptor. Keys are algorithms, values are hex digests.",
+            "required": ["sha256"],
+            "additionalProperties": {
+              "type": "string"
+            },
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "examples": ["a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"]
+              }
+            }
+          },
+          "annotations": {
+            "type": "object",
+            "description": "Optional key-value annotations.",
+            "additionalProperties": {"type": "string"}
+          }
+        }
+      }
+    },
+    "predicateType": {
+      "type": "string",
+      "const": "https://genoa.dev/AgentHost/v1",
+      "description": "genoa predicate type URI. This value identifies this attestation as a genoa AgentHost claim."
+    },
+    "predicate": {
+      "type": "object",
+      "description": "genoa-specific attestation payload.",
+      "required": ["image_identity", "capability_claims", "slsa_level", "sbom_digest"],
+      "additionalProperties": false,
+      "properties": {
+        "image_identity": {
+          "type": "object",
+          "description": "Attestation-time image identity snapshot. MUST match values in the manifest served at build time.",
+          "required": ["id", "name", "version", "architecture", "os"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "OCI-style digest or UUID v7.",
+              "examples": ["sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"]
+            },
+            "name": {
+              "type": "string",
+              "examples": ["smolbsd-agent-host"]
+            },
+            "version": {
+              "type": "string",
+              "examples": ["0.1.0"]
+            },
+            "architecture": {
+              "type": "string",
+              "enum": ["amd64", "arm64", "riscv64", "armv7", "s390x", "ppc64le"]
+            },
+            "os": {
+              "type": "string",
+              "enum": ["freebsd", "netbsd", "openbsd", "linux", "windows"]
+            },
+            "build_timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "source_repo": {
+              "type": "string",
+              "format": "uri"
+            },
+            "source_commit": {
+              "type": "string"
+            }
+          }
+        },
+        "capability_claims": {
+          "type": "array",
+          "description": "Capability claims attested at build time. Each entry MUST conform to schemas/capability.v1.json. These are frozen at build — runtime capability/list may differ.",
+          "items": {
+            "$ref": "https://genoa.dev/v1/schemas/capability.v1.json"
+          }
+        },
+        "slsa_level": {
+          "type": "integer",
+          "description": "SLSA Build Level achieved. See https://slsa.dev/spec/v1.0/levels for requirements. The probe verifies this claim against known build provenance.",
+          "minimum": 0,
+          "maximum": 4,
+          "examples": [2]
+        },
+        "sbom_digest": {
+          "type": "string",
+          "description": "sha256 digest of the SPDX or CycloneDX SBOM produced at build time. MUST match sbom.digest in the manifest.",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "examples": ["sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"]
+        },
+        "build_environment": {
+          "type": "object",
+          "description": "SLSA v1.0 buildEnvironment summary. See https://slsa.dev/spec/v1.0/provenance",
+          "additionalProperties": false,
+          "properties": {
+            "builder_id": {
+              "type": "string",
+              "format": "uri",
+              "description": "SLSA Builder URI.",
+              "examples": ["https://github.com/slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@refs/tags/v1.9.0"]
+            },
+            "build_config_uri": {
+              "type": "string",
+              "format": "uri",
+              "description": "URI to the build configuration used.",
+              "examples": ["https://github.com/ryanmaclean/genoa/.github/workflows/build.yml@refs/heads/main"]
+            },
+            "resolved_dependencies": {
+              "type": "array",
+              "description": "Build-time dependencies resolved. Follows SLSA ResourceDescriptor list.",
+              "items": {
+                "type": "object",
+                "required": ["uri"],
+                "properties": {
+                  "uri": {"type": "string"},
+                  "digest": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "signature": {
+          "type": "object",
+          "description": "Signature metadata. Full cryptographic verification requires the signing key and transparency log. See attestation_policy in manifest.",
+          "additionalProperties": false,
+          "properties": {
+            "keyid": {
+              "type": "string",
+              "description": "Key identifier (Sigstore key ID or TUF role).",
+              "examples": ["SHA256:abc123"]
+            },
+            "sig": {
+              "type": "string",
+              "description": "Base64-encoded signature.",
+              "examples": ["MEUCIQDabc..."]
+            },
+            "cert": {
+              "type": "string",
+              "description": "PEM-encoded signing certificate (Sigstore ephemeral cert)."
+            },
+            "transparency_log_entry": {
+              "type": "string",
+              "description": "Rekor log entry UUID.",
+              "examples": ["24296fb24b8ad77a9614a34e6c0fd88c5600a9e2a3a9adab3a30e7d2780ddd53"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "_type": "https://in-toto.io/Statement/v1",
+      "subject": [
+        {
+          "name": "smolbsd-agent-host:0.1.0",
+          "digest": {
+            "sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+          }
+        }
+      ],
+      "predicateType": "https://genoa.dev/AgentHost/v1",
+      "predicate": {
+        "image_identity": {
+          "id": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+          "name": "smolbsd-agent-host",
+          "version": "0.1.0",
+          "architecture": "amd64",
+          "os": "freebsd",
+          "build_timestamp": "2026-04-30T12:00:00Z",
+          "source_repo": "https://github.com/ryanmaclean/genoa",
+          "source_commit": "abc123def456abc123def456abc123def456abc1"
+        },
+        "capability_claims": [],
+        "slsa_level": 2,
+        "sbom_digest": "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+      }
+    }
+  ]
+}

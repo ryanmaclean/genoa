@@ -1,0 +1,128 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "smolbsd-agent-host:0.1.0",
+      "digest": {
+        "sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+      },
+      "annotations": {
+        "dev.genoa.image.os": "freebsd",
+        "dev.genoa.image.architecture": "amd64"
+      }
+    }
+  ],
+  "predicateType": "https://genoa.dev/AgentHost/v1",
+  "predicate": {
+    "image_identity": {
+      "id": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      "name": "smolbsd-agent-host",
+      "version": "0.1.0",
+      "architecture": "amd64",
+      "os": "freebsd",
+      "os_version": "14.2",
+      "build_timestamp": "2026-04-30T12:00:00Z",
+      "source_repo": "https://github.com/ryanmaclean/genoa",
+      "source_commit": "abc123def456abc123def456abc123def456abc1"
+    },
+    "capability_claims": [
+      {
+        "name": "execute_shell_command",
+        "description": "Execute a shell command on the host. Restricted to /bin and /usr/bin by pledge policy. Returns stdout, stderr, and exit code.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Shell command to execute."
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 30
+            }
+          },
+          "required": ["command"]
+        },
+        "provenance": {
+          "source": "built-in",
+          "trust": "attested",
+          "package_id": "SPDXRef-shell-executor-1.0.0",
+          "attestation_ref": "0",
+          "added_at": "2026-04-30T12:00:00Z",
+          "added_by": "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"
+        },
+        "annotations": {
+          "dev.genoa.capability.category": "shell",
+          "dev.genoa.capability.risk_level": "high"
+        }
+      },
+      {
+        "name": "read_file",
+        "description": "Read a file from the host filesystem. Restricted to /etc/genoa/ and /var/log/genoa/ by pledge policy.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute file path to read."
+            }
+          },
+          "required": ["path"]
+        },
+        "provenance": {
+          "source": "built-in",
+          "trust": "attested",
+          "package_id": "SPDXRef-file-reader-1.0.0",
+          "attestation_ref": "1",
+          "added_at": "2026-04-30T12:00:00Z",
+          "added_by": "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"
+        },
+        "annotations": {
+          "dev.genoa.capability.category": "filesystem",
+          "dev.genoa.capability.risk_level": "medium"
+        }
+      },
+      {
+        "name": "get_system_metrics",
+        "description": "Return current CPU, memory, and disk usage metrics in structured JSON.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "provenance": {
+          "source": "built-in",
+          "trust": "attested",
+          "package_id": "SPDXRef-metrics-collector-1.0.0",
+          "attestation_ref": "2",
+          "added_at": "2026-04-30T12:00:00Z",
+          "added_by": "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml"
+        },
+        "annotations": {
+          "dev.genoa.capability.category": "observability",
+          "dev.genoa.capability.risk_level": "low"
+        }
+      }
+    ],
+    "slsa_level": 2,
+    "sbom_digest": "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "build_environment": {
+      "builder_id": "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/builder_container_slsa3.yml@refs/tags/v2.0.0",
+      "build_config_uri": "https://github.com/ryanmaclean/genoa/.github/workflows/build.yml@refs/heads/main",
+      "resolved_dependencies": [
+        {
+          "uri": "https://pkg.freebsd.org/FreeBSD:14:amd64/quarterly/All/base-14.2.pkg",
+          "digest": {
+            "sha256": "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
+          }
+        }
+      ]
+    },
+    "signature": {
+      "keyid": "SHA256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+      "sig": "MEUCIQDabcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxAiEA0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01==",
+      "transparency_log_entry": "24296fb24b8ad77a9614a34e6c0fd88c5600a9e2a3a9adab3a30e7d2780ddd53"
+    }
+  }
+}

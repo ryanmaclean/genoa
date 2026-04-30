@@ -1,0 +1,54 @@
+schema_version = "v1"
+
+[image]
+name = "smolbsd-vultr-aarch64"
+version = "v0.1.0"
+format = "iso"
+size_mb = 2048
+description = "Minimal FreeBSD for Vultr aarch64 via ISO boot"
+
+[target]
+os = "freebsd"
+os_version = "15.0-RELEASE"
+arch = "aarch64"
+platform = "generic"
+
+[kernel]
+config = "GENERIC"
+strip_debug = true
+
+[packages]
+include = [
+  "FreeBSD-runtime",
+  "FreeBSD-clibs",
+  "FreeBSD-rc",
+  "FreeBSD-utilities",
+  "FreeBSD-pkg-bootstrap"
+]
+
+[agent]
+name = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type = "url"
+url = "https://gitea.local:3000/ii/ii-agent/releases/download/v0.1.0-freebsd-aarch64/ii-agent"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[agent.rc_service]
+enabled = true
+name = "ii_agent"
+
+[network]
+interface = "vtnet0"
+mode = "dhcp"
+hostname = "smolbsd-vultr"
+
+profile = "uefi"
+
+[deploy]
+provider = "vultr"
+
+[metadata]
+builder_notes = "ISO format for Vultr custom ISO upload"
+target_region = "global"

@@ -1,0 +1,5 @@
+# templates/publish/
+
+Reserved for publish backend templates (e.g., presign policy documents,
+multipart upload configs). Currently unused — backends are self-contained
+in publish.nu.

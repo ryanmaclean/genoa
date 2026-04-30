@@ -1,0 +1,48 @@
+# lsd manifest — OCI Always Free (ARM64 Ampere A1) + FreeBSD 15.0-RELEASE
+# Provider: Oracle Cloud Infrastructure (Always Free tier)
+# Strategy: BYOI (Bring Your Own Image) — upload a pre-built FreeBSD qcow2 as a Custom Image
+#
+# OCI Always Free ARM64 quirks:
+#   - VM.Standard.A1.Flex — up to 4 OCPUs / 24 GB RAM free tier
+#   - FreeBSD custom image must be qcow2 or VMDK, uploaded via OCI Console or CLI
+#   - OCI does NOT offer a "rescue boot" mode like Hetzner — the BYOI path IS the path
+#   - The QEMU trampoline is therefore run LOCALLY to build the image, then uploaded
+#   - Boot volume is paravirtualized (virtio-blk); use /dev/vda inside the image
+#   - IMDS: http://169.254.169.254/opc/v1/instance/  (OCI IMDS v1)
+#   - SSH keys: via OCI IMDS /metadata/ssh_authorized_keys (single string, newline-separated)
+#   - Security List must allow TCP/22 inbound — default VCN does not by default
+#   - IPv6: supported in OCI VCN but requires dual-stack configuration; disabled here
+#
+# BYOI upload path (not automated in v0.1):
+#   oci compute image import from-object-uri \
+#     --compartment-id <ocid> \
+#     --uri "https://objectstorage.<region>.oraclecloud.com/..." \
+#     --operating-system FreeBSD --operating-system-version "15.0"
+#
+# Status: BYOI path documented, qcow2 upload workflow described, NOT exercised in this harness
+
+lsd_schema_version = "1.0.0"
+
+[target]
+provider = "oci"
+plan     = "VM.Standard.A1.Flex"
+region   = "us-ashburn-1"
+
+[base]
+os         = "freebsd"
+version    = "15.0-RELEASE"
+arch       = "aarch64"
+filesystem = "zfs"
+# mfsBSD used as build environment to produce the BYOI qcow2
+# Final image is NOT mfsBSD itself — it's the FreeBSD install that mfsBSD performed
+mfsbsd_url = "https://mfsbsd.vx.sk/files/iso/15/aarch64/mfsbsd-se-15.0-RELEASE-arm64-aarch64.iso"
+
+[network]
+ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key-here"]
+hostname = "bsd-oci-a1-001"
+ipv6     = false
+
+[trust]
+# PLACEHOLDER sha256 — replace with real digest before production use
+mfs_image_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+provenance_url   = "https://mfsbsd.vx.sk/files/iso/15/aarch64/mfsbsd-se-15.0-RELEASE-arm64-aarch64.iso.sha256"

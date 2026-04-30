@@ -1,0 +1,40 @@
+# lsd manifest — Hetzner Cloud CAX11 (ARM64) + FreeBSD 15.0-RELEASE
+# Provider: Hetzner Cloud (cloud.hetzner.com)
+# Strategy: Boot CAX11 into Linux rescue, run bootstrap.sh, QEMU trampoline to mfsBSD
+#
+# Hetzner CAX11 quirks:
+#   - ARM64 / Ampere Altra; rescue boots Debian 12
+#   - virtio-mmio bus (not virtio-pci); QEMU needs -M virt,accel=kvm for best perf
+#   - Hetzner rescue is real KVM — hardware virt available, no nested-virt penalty
+#   - Disk: /dev/sda typically (check `lsblk` in rescue before assuming)
+#   - IMDS: http://169.254.169.254/hetzner/v1/metadata (Hetzner Cloud flavour)
+#   - SSH keys injected via Hetzner IMDS /public-keys endpoint
+# Status: spec'd, virtio-mmio quirks documented, NOT exercised in this harness
+
+lsd_schema_version = "1.0.0"
+
+[target]
+provider     = "hetzner-cloud"
+plan         = "cax11"
+region       = "nbg1"
+# rescue_image = "debian-12"  # Hetzner default; uncomment to override
+
+[base]
+os         = "freebsd"
+version    = "15.0-RELEASE"
+arch       = "aarch64"
+filesystem = "zfs"
+# mfsBSD ARM64 ISO — URL is real, sha256 is a PLACEHOLDER (large file not downloaded in harness)
+# Real sha256 available at: https://mfsbsd.vx.sk/files/iso/15/aarch64/
+mfsbsd_url = "https://mfsbsd.vx.sk/files/iso/15/aarch64/mfsbsd-se-15.0-RELEASE-arm64-aarch64.iso"
+
+[network]
+ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key-here"]
+hostname = "bsd-cax11-001"
+ipv6     = true
+
+[trust]
+# PLACEHOLDER sha256 — replace with real digest before production use
+# Obtain from: https://mfsbsd.vx.sk/files/iso/15/aarch64/mfsbsd-se-15.0-RELEASE-arm64-aarch64.iso.sha256
+mfs_image_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+provenance_url   = "https://mfsbsd.vx.sk/files/iso/15/aarch64/mfsbsd-se-15.0-RELEASE-arm64-aarch64.iso.sha256"

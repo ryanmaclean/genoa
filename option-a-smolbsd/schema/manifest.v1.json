@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ryanmaclean/genoa/option-a-smolbsd/schema/manifest.v1.json",
+  "title": "genoa manifest",
+  "description": "v1 manifest schema for smolBSD-for-agents image build. Feed this to `genoa build`.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["schema_version", "image", "target", "kernel", "agent"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1",
+      "description": "Schema version. Must be 'v1'. Bump to v2 on breaking changes."
+    },
+    "image": {
+      "type": "object",
+      "description": "Image identity and output configuration.",
+      "required": ["name", "version", "format", "size_mb"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "description": "Slug used as the output filename stem. Example: 'smolbsd-rpi5-iiagent'."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9.]+)?$",
+          "description": "SemVer tag for this image build. Example: 'v0.1.0'."
+        },
+        "format": {
+          "type": "string",
+          "enum": ["qcow2", "raw", "vmdk"],
+          "description": "Output image format. 'qcow2' preferred for QEMU (sparse, snapshot-capable)."
+        },
+        "size_mb": {
+          "type": "integer",
+          "minimum": 512,
+          "maximum": 65536,
+          "description": "Provisioned image size in MiB. Actual artifact will be smaller if format=qcow2 (sparse)."
+        },
+        "output_dir": {
+          "type": "string",
+          "description": "Directory where the finished image and receipt are written. Defaults to './out'.",
+          "default": "./out"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this image's purpose."
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "description": "Target platform: OS, architecture, and hypervisor profile.",
+      "required": ["os", "os_version", "arch", "platform"],
+      "additionalProperties": false,
+      "properties": {
+        "os": {
+          "type": "string",
+          "enum": ["freebsd", "netbsd"],
+          "description": "Target operating system."
+        },
+        "os_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-RELEASE|-STABLE|-CURRENT|-SNAPSHOT)?$",
+          "description": "OS release string. Example: '15.0-RELEASE', '10.0'."
+        },
+        "arch": {
+          "type": "string",
+          "enum": ["amd64", "aarch64", "riscv64"],
+          "description": "Target CPU architecture."
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["qemu", "rpi4", "rpi5", "generic"],
+          "description": "Target hardware/hypervisor platform. Drives kernel config selection and loader defaults."
+        },
+        "build_host": {
+          "type": "string",
+          "description": "Optional: SSH destination for the build host (e.g. 'builder@fb-vm-24:2225'). Omit to build locally.",
+          "examples": ["builder@localhost:2225", "root@fbrpi406"]
+        }
+      }
+    },
+    "kernel": {
+      "type": "object",
+      "description": "Kernel configuration delta applied on top of the base config.",
+      "required": ["config"],
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "type": "string",
+          "description": "Kernel config name. Use a built-in (GENERIC, MINIMAL, RPI) or a custom config name from kernel_delta_file.",
+          "examples": ["SMOLBSD", "GENERIC", "MINIMAL", "RPI"]
+        },
+        "kernel_delta_file": {
+          "type": "string",
+          "description": "Optional path to a kernel config delta file to deploy alongside config. Relative to manifest location."
+        },
+        "extra_options": {
+          "type": "array",
+          "description": "Additional nodevice/nooptions/options lines injected into the kernel config.",
+          "items": {
+            "type": "string",
+            "pattern": "^(no)?(device|options|makeoptions)\\s+\\S.*$"
+          }
+        },
+        "strip_debug": {
+          "type": "boolean",
+          "default": true,
+          "description": "Strip debug symbols from kernel binary. Reduces size by ~50%."
+        }
+      }
+    },
+    "packages": {
+      "type": "object",
+      "description": "Package set for the image. Follows FreeBSD pkgbase conventions.",
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "type": "array",
+          "description": "Packages to include. Use pkgbase names for FreeBSD base packages.",
+          "items": { "type": "string" },
+          "default": [
+            "FreeBSD-runtime",
+            "FreeBSD-clibs",
+            "FreeBSD-rc",
+            "FreeBSD-utilities",
+            "FreeBSD-pkg-bootstrap",
+            "FreeBSD-libarchive",
+            "FreeBSD-openssl-lib",
+            "FreeBSD-fetch"
+          ]
+        },
+        "exclude_patterns": {
+          "type": "array",
+          "description": "Glob patterns to exclude. Applied via vm_extra_filter_base_packages().",
+          "items": { "type": "string" },
+          "default": ["*-dbg", "*-lib32", "FreeBSD-tests*", "FreeBSD-lldb*", "FreeBSD-devel*", "FreeBSD-src*"]
+        },
+        "pkg_repo": {
+          "type": "string",
+          "description": "pkg repository URL. Defaults to FreeBSD quarterly.",
+          "default": "https://pkg.freebsd.org/FreeBSD:15:aarch64/quarterly"
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "description": "Agent payload baked into the image.",
+      "required": ["name", "version", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Agent identifier. Example: 'ii-agent', 'conclave'.",
+          "examples": ["ii-agent", "conclave", "irclaw-v2"]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9.]+)?$",
+          "description": "SemVer version of the agent binary."
+        },
+        "source": {
+          "type": "object",
+          "description": "Where to fetch the agent binary from.",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["gitea_release", "url", "local_path"],
+              "description": "Fetch strategy."
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Direct download URL (used when type='url' or 'gitea_release')."
+            },
+            "repo": {
+              "type": "string",
+              "description": "Gitea repo path 'owner/name' (used when type='gitea_release')."
+            },
+            "tag": {
+              "type": "string",
+              "description": "Release tag (used when type='gitea_release'). Example: 'ii-agent/v0.1.0-freebsd-aarch64'."
+            },
+            "asset": {
+              "type": "string",
+              "description": "Asset filename within the Gitea release."
+            },
+            "path": {
+              "type": "string",
+              "description": "Local filesystem path (used when type='local_path')."
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-fA-F0-9]{64}$",
+              "description": "Expected SHA-256 hex digest of the fetched binary. Required for url and gitea_release."
+            }
+          }
+        },
+        "install_path": {
+          "type": "string",
+          "default": "/usr/local/bin",
+          "description": "Absolute path inside the image where the agent binary is installed."
+        },
+        "rc_service": {
+          "type": "object",
+          "description": "Optional rc.d service configuration to start the agent at boot.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "name": { "type": "string", "description": "rc.d service name. Example: 'ii_agent'." },
+            "command_args": {
+              "type": "string",
+              "description": "Arguments passed to the agent binary when started by rc.d."
+            }
+          }
+        },
+        "config": {
+          "type": "object",
+          "description": "Agent-specific configuration key/value pairs baked into the image.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "description": "Network configuration baked into rc.conf.",
+      "additionalProperties": false,
+      "properties": {
+        "interface": {
+          "type": "string",
+          "default": "vtnet0",
+          "description": "Primary network interface name.",
+          "examples": ["vtnet0", "ue0", "genet0"]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["dhcp", "static"],
+          "default": "dhcp"
+        },
+        "static_ip": {
+          "type": "string",
+          "description": "IP/prefix in CIDR notation (used when mode=static).",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+$"
+        },
+        "gateway": {
+          "type": "string",
+          "description": "Default gateway (used when mode=static)."
+        },
+        "hostname": {
+          "type": "string",
+          "default": "smolbsd"
+        }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "description": "Image signing configuration. If omitted, image is unsigned.",
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": ["signify", "none"],
+          "default": "none",
+          "description": "Signing tool. 'signify' uses OpenBSD signify(1) / FreeBSD signify-ossl."
+        },
+        "key_file": {
+          "type": "string",
+          "description": "Path to the signify private key file (.sec). Keep outside of version control."
+        },
+        "public_key_file": {
+          "type": "string",
+          "description": "Path to the signify public key file (.pub). Embedded in receipt."
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary key/value metadata carried into the receipt.",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

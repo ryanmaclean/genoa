@@ -1,0 +1,106 @@
+# genoa manifest v1 — FreeBSD amd64 QEMU bring-up profile
+# Profile: qemu-x86_64
+# Purpose: Minimal FreeBSD 15 amd64 QEMU VM for local development and
+#          fleet bring-up testing. No agent payload — bare smolBSD base.
+#          Uses SMOLBSD kernel config (virtio-only, no physical hardware).
+#
+# Build: nu genoa.nu build examples/qemu-x86_64.toml
+# Plan:  nu genoa.nu describe examples/qemu-x86_64.toml
+# Launch (after build):
+#   qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -smp 2 \
+#     -drive file=out/smolbsd-qemu-x86_64-v0.1.0.qcow2,format=qcow2,if=virtio \
+#     -nic user,model=virtio-net-pci,hostfwd=tcp::2230-:22 \
+#     -serial unix:/tmp/smolbsd.sock,server,nowait -nographic
+
+schema_version = "v1"
+
+[image]
+name        = "smolbsd-qemu-x86_64"
+version     = "v0.1.0"
+format      = "qcow2"         # sparse qcow2, target < 200 MiB artifact
+size_mb     = 4096            # 4 GiB provisioned
+output_dir  = "./out"
+description = "Minimal FreeBSD 15.0 amd64 QEMU VM — bring-up and CI target"
+
+[target]
+os          = "freebsd"
+os_version  = "15.0-RELEASE"
+arch        = "amd64"
+platform    = "qemu"
+# build_host omitted: build locally (assumes FreeBSD build host in PATH)
+
+[kernel]
+config            = "SMOLBSD"
+# kernel_delta_file omitted: SMOLBSD config is expected to already exist at
+# /usr/src/sys/amd64/conf/SMOLBSD on the build host (see smolBSD Phase I plan).
+strip_debug       = true
+extra_options     = [
+  # All physical hardware stripped — see plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md
+  # for the full SMOLBSD config. These are additional runtime flags only:
+  "nooptions WITNESS",
+  "nooptions INVARIANTS",
+  "nooptions INVARIANT_SUPPORT",
+  "nooptions BUF_TRACKING",
+  "nooptions FULL_BUF_TRACKING",
+  "nooptions COMPAT_FREEBSD10",
+  "nooptions COMPAT_FREEBSD11",
+]
+
+[packages]
+# Floor: OCI runtime image packages + enough to run pkg and SSH
+include = [
+  "FreeBSD-clibs",
+  "FreeBSD-runtime",
+  "FreeBSD-libexecinfo",
+  "FreeBSD-libucl",
+  "FreeBSD-libarchive",
+  "FreeBSD-openssl-lib",
+  "FreeBSD-kerberos-lib",
+  "FreeBSD-certctl",
+  "FreeBSD-fetch",
+  "FreeBSD-mtree",
+  "FreeBSD-rc",
+  "FreeBSD-utilities",
+  "FreeBSD-ee",
+  "FreeBSD-pkg-bootstrap",
+]
+exclude_patterns = [
+  "*-dbg",
+  "*-lib32",
+  "FreeBSD-tests*",
+  "FreeBSD-lldb*",
+  "FreeBSD-devel*",
+  "FreeBSD-src*",
+  "FreeBSD-kernel-minimal",
+  "FreeBSD-set-kernels-dbg",
+]
+pkg_repo = "https://pkg.freebsd.org/FreeBSD:15:amd64/quarterly"
+
+[agent]
+name    = "none"
+version = "v0.0.0"
+
+[agent.source]
+type = "local_path"
+path = ""   # no agent; this profile is base-only
+
+[agent.config]
+# empty — no agent installed in this profile
+
+[network]
+interface = "vtnet0"      # VirtIO NIC driver (virtio-net-pci in QEMU)
+mode      = "dhcp"
+hostname  = "smolbsd"
+
+[signing]
+tool = "none"
+
+[metadata]
+campaign           = "smolbsd"
+bake_off_option    = "A"
+profile            = "qemu-x86_64"
+phase              = "I"
+size_budget_mib    = "512"
+artifact_goal_mib  = "128"
+maintainer         = "ryanmaclean"
+launch_cmd         = "qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -smp 2 -drive file=out/smolbsd-qemu-x86_64-v0.1.0.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci,hostfwd=tcp::2230-:22 -serial unix:/tmp/smolbsd.sock,server,nowait -nographic"

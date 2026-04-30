@@ -1,0 +1,338 @@
+{
+  "version": "2",
+  "metadata": {
+    "genoa_manifest_id": "{{ manifest_id }}",
+    "genoa_schema_version": "v1",
+    "generated_at": "{{ generated_at }}",
+    "base": "debian-bookworm",
+    "arch": "x86_64"
+  },
+  "pipelines": [
+    {
+      "name": "build",
+      "runner": "org.osbuild.debian",
+      "stages": [
+        {
+          "type": "org.osbuild.deb.repos",
+          "options": {
+            "repos": [
+              {
+                "id": "debian-main",
+                "baseurl": "http://deb.debian.org/debian",
+                "distribution": "bookworm",
+                "components": ["main", "contrib", "non-free-firmware"],
+                "check_gpg": true,
+                "gpgkeys": [
+                  "https://ftp-master.debian.org/keys/archive-key-12.asc"
+                ]
+              },
+              {
+                "id": "debian-security",
+                "baseurl": "http://security.debian.org/debian-security",
+                "distribution": "bookworm-security",
+                "components": ["main"],
+                "check_gpg": true,
+                "gpgkeys": [
+                  "https://ftp-master.debian.org/keys/archive-key-12-security.asc"
+                ]
+              },
+              {
+                "id": "debian-updates",
+                "baseurl": "http://deb.debian.org/debian",
+                "distribution": "bookworm-updates",
+                "components": ["main"],
+                "check_gpg": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "os",
+      "runner": "org.osbuild.debian",
+      "stages": [
+        {
+          "type": "org.osbuild.debootstrap",
+          "options": {
+            "suite": "bookworm",
+            "mirror": "http://deb.debian.org/debian",
+            "include": [
+              "systemd",
+              "systemd-sysv",
+              "cloud-init",
+              "openssh-server",
+              "sudo",
+              "curl",
+              "ca-certificates",
+              "gnupg",
+              "lsb-release",
+              "apt-transport-https",
+              "jq",
+              "git",
+              "python3",
+              "python3-pip",
+              "grub-pc",
+              "linux-image-amd64",
+              "linux-headers-amd64",
+              "e2fsprogs",
+              "dosfstools",
+              "parted",
+              "util-linux"{% if extra_packages is defined and extra_packages | length > 0 %},
+{% for pkg in extra_packages %}
+              "{{ pkg }}"{% if not loop.last %},{% endif %}
+
+{% endfor %}
+{% endif %}
+
+            ],
+            "exclude": [
+              "tasksel",
+              "debconf-i18n"
+            ]
+          }
+        },
+        {
+          "type": "org.osbuild.systemd",
+          "options": {
+            "enabled_services": [
+              "cloud-init.service",
+              "cloud-init-local.service",
+              "cloud-config.service",
+              "cloud-final.service",
+              "ssh.service",
+              "systemd-networkd.service",
+              "systemd-resolved.service"
+            ],
+            "disabled_services": [
+              "apt-daily.service",
+              "apt-daily-upgrade.service"
+            ],
+            "masked_services": []
+          }
+        },
+        {
+          "type": "org.osbuild.cloud-init",
+          "options": {
+            "config": {
+              "datasource_list": ["NoCloud", "Ec2", "GCE", "DigitalOcean", "None"],
+              "datasource": {
+                "NoCloud": {
+                  "seedfrom": null,
+                  "fs_label": "cidata"
+                },
+                "Ec2": {
+                  "timeout": 5,
+                  "max_wait": 10,
+                  "metadata_urls": ["http://169.254.169.254"]
+                }
+              },
+              "network": {
+                "config": "disabled"
+              },
+              "disable_root": true,
+              "ssh_pwauth": false,
+              "chpasswd": {
+                "expire": false
+              }
+            }
+          }
+        },
+        {
+          "type": "org.osbuild.fstab",
+          "options": {
+            "filesystems": [
+              {
+                "device": "LABEL=root",
+                "path": "/",
+                "type": "ext4",
+                "options": "defaults,noatime",
+                "dump": 0,
+                "passno": 1
+              },
+              {
+                "device": "LABEL=EFI",
+                "path": "/boot/efi",
+                "type": "vfat",
+                "options": "defaults,uid=0,gid=0,umask=077",
+                "dump": 0,
+                "passno": 2
+              }
+            ]
+          }
+        },
+        {
+          "type": "org.osbuild.grub2",
+          "options": {
+            "rootfs": { "label": "root" },
+            "bootfs": { "label": "EFI" },
+            "config": {
+              "terminal_output": ["console"],
+              "cmdline": "console=tty1 console=ttyS0,115200n8 net.ifnames=0 biosdevname=0 nvme_core.io_timeout=4294967295"
+            }
+          }
+        }{% if dd_enabled | default(value=true) %},
+        {
+          "type": "org.osbuild.copy",
+          "options": {
+            "paths": [
+              {
+                "from": "input://dd-install/install_script_agent7.sh",
+                "to": "tree:///usr/local/sbin/dd-install.sh"
+              }
+            ]
+          },
+          "inputs": {
+            "dd-install": {
+              "type": "org.osbuild.curl",
+              "origin": "org.osbuild.source",
+              "options": {
+                "url": "https://install.datadoghq.com/scripts/install_script_agent7.sh"
+              }
+            }
+          }
+        }
+{% endif %}
+
+      ]
+    },
+    {
+      "name": "image",
+      "stages": [
+        {
+          "type": "org.osbuild.truncate",
+          "options": {
+            "filename": "disk.img",
+            "size": "{{ disk_size_gb | default(value=10) }}073741824"
+          }
+        },
+        {
+          "type": "org.osbuild.parted",
+          "options": {
+            "partitions": [
+              {
+                "number": 1,
+                "start": "1MiB",
+                "end": "200MiB",
+                "type": "fat32",
+                "name": "EFI",
+                "bootable": true,
+                "flags": ["esp"]
+              },
+              {
+                "number": 2,
+                "start": "200MiB",
+                "end": "100%",
+                "type": "ext4",
+                "name": "root"
+              }
+            ]
+          }
+        },
+        {
+          "type": "org.osbuild.mkfs.fat",
+          "options": {
+            "volid": "EFI",
+            "label": "EFI",
+            "fat-size": 32
+          },
+          "devices": {
+            "device": {
+              "type": "org.osbuild.loopback",
+              "options": { "filename": "disk.img", "partition": 1 }
+            }
+          }
+        },
+        {
+          "type": "org.osbuild.mkfs.ext4",
+          "options": {
+            "uuid": "{{ root_fs_uuid | default(value="44444444-4444-4444-8888-444444444444") }}",
+            "label": "root"
+          },
+          "devices": {
+            "device": {
+              "type": "org.osbuild.loopback",
+              "options": { "filename": "disk.img", "partition": 2 }
+            }
+          }
+        },
+        {
+          "type": "org.osbuild.copy",
+          "options": {
+            "paths": [
+              { "from": "input://root-tree/", "to": "mount://root/" }
+            ]
+          },
+          "inputs": {
+            "root-tree": {
+              "type": "org.osbuild.tree",
+              "origin": "org.osbuild.pipeline",
+              "references": ["name:os"]
+            }
+          },
+          "mounts": [
+            {
+              "name": "root",
+              "type": "org.osbuild.ext4",
+              "source": { "type": "org.osbuild.loopback", "options": { "filename": "disk.img", "partition": 2 } },
+              "target": "/"
+            },
+            {
+              "name": "efi",
+              "type": "org.osbuild.fat",
+              "source": { "type": "org.osbuild.loopback", "options": { "filename": "disk.img", "partition": 1 } },
+              "target": "/boot/efi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "qcow2",
+      "stages": [
+        {
+          "type": "org.osbuild.qemu",
+          "options": {
+            "filename": "{{ manifest_id }}-debian-bookworm-amd64.qcow2",
+            "format": {
+              "type": "qcow2",
+              "compression": {{ compress | default(value=false) | lower }},
+              "compat": "1.1"
+            }
+          },
+          "inputs": {
+            "image": {
+              "type": "org.osbuild.files",
+              "origin": "org.osbuild.pipeline",
+              "references": { "name:image": { "file": "disk.img" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "vmdk",
+      "stages": [
+        {
+          "type": "org.osbuild.qemu",
+          "options": {
+            "filename": "{{ manifest_id }}-debian-bookworm-amd64.vmdk",
+            "format": {
+              "type": "vmdk",
+              "adapter_type": "lsilogic",
+              "subformat": "streamOptimized"
+            }
+          },
+          "inputs": {
+            "image": {
+              "type": "org.osbuild.files",
+              "origin": "org.osbuild.pipeline",
+              "references": { "name:image": { "file": "disk.img" } }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "sources": {}
+}

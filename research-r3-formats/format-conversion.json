@@ -1,0 +1,209 @@
+{
+  "schema_version": "1.0.0",
+  "generated": "2026-04-30",
+  "source_format": "raw",
+  "converter_primary": {
+    "tool": "qemu-img",
+    "license": "GPL-2.0-only",
+    "invocation": "external subprocess — never vendored",
+    "note": "GPL-2 is acceptable only via exec() boundary. Do not link. Always invoke as external binary."
+  },
+  "formats": [
+    {
+      "name": "raw",
+      "description": "Flat binary disk image, sector-for-sector",
+      "providers": ["DigitalOcean (custom image)", "Hetzner Cloud (rescue dd target)", "Linode (custom image upload)", "Vultr (snapshot source)", "bare-metal (dd to device)"],
+      "conversion_from_raw": "cp source.raw dest.raw  # or use as-is",
+      "qemu_img_cmd": null,
+      "gotchas": [
+        "Size must be multiple of 512 bytes. Pad with truncate if needed.",
+        "Some providers impose max uncompressed size (Linode: 6 GiB compressed, DigitalOcean: 100 GiB).",
+        "Sparse files may expand on copy. Use 'qemu-img convert -f raw -O raw' to sparsify."
+      ],
+      "reproducible_roundtrip": true,
+      "roundtrip_note": "raw->raw is identity if sparseness handling is consistent."
+    },
+    {
+      "name": "qcow2",
+      "description": "QEMU Copy-On-Write v2 — compressed, sparse, snapshot-capable",
+      "providers": ["OpenStack (Glance)", "ProxMox", "UpCloud", "internal QEMU/KVM fleets"],
+      "conversion_from_raw": "qemu-img convert -f raw -O qcow2 -c source.raw dest.qcow2",
+      "qemu_img_cmd": "qemu-img convert -f raw -O qcow2 [-c] input.raw output.qcow2",
+      "gotchas": [
+        "-c enables deflate compression: smaller file but CPU cost at read time.",
+        "qcow2 embeds metadata header, creation timestamp, cluster map — roundtrip raw->qcow2->raw is NOT bit-identical.",
+        "Cluster size default 64 KiB; tune with -o cluster_size=512k for sequential-read workloads.",
+        "v3 format (default QEMU >=5.2) adds extended L2 entries. Older libvirt may reject. Pin with -o compat=0.10.",
+        "OpenStack Glance requires explicit disk_format=qcow2 metadata on upload."
+      ],
+      "reproducible_roundtrip": false,
+      "roundtrip_note": "qcow2 metadata (timestamp, uuid, backing-file chain) breaks bit-for-bit reproducibility. Data sectors are preserved."
+    },
+    {
+      "name": "vmdk-streamoptimized",
+      "description": "VMware VMDK, stream-optimized subformat — compressed, sequential-read friendly",
+      "providers": ["VMware vSphere/ESXi", "VMware Cloud on AWS", "OVA bundles (inner disk)"],
+      "conversion_from_raw": "qemu-img convert -f raw -O vmdk -o subformat=streamOptimized source.raw dest.vmdk",
+      "qemu_img_cmd": "qemu-img convert -f raw -O vmdk -o subformat=streamOptimized input.raw output.vmdk",
+      "gotchas": [
+        "subformat MUST be specified: default monolithicSparse is not accepted by vSphere for import.",
+        "streamOptimized requires sequential write — cannot be directly mounted as block device without conversion.",
+        "VMware Tools descriptor expects adapterType=lsiLogic; qemu-img sets 'ide'. Patch descriptor for ESXi.",
+        "ESXi 7+ can import streamOptimized directly; ESXi 6.x requires OVF wrapper.",
+        "Google Cloud: do NOT use VMDK. Use raw renamed disk.raw inside image.tar.gz."
+      ],
+      "reproducible_roundtrip": false,
+      "roundtrip_note": "VMDK descriptor has non-deterministic uuid. Data sectors are reproducible if input is identical."
+    },
+    {
+      "name": "vmdk-monolithic",
+      "description": "VMware VMDK, monolithic sparse — single-file, randomly accessible",
+      "providers": ["VMware Workstation/Fusion (local)", "VirtualBox (can import)"],
+      "conversion_from_raw": "qemu-img convert -f raw -O vmdk -o subformat=monolithicSparse source.raw dest.vmdk",
+      "qemu_img_cmd": "qemu-img convert -f raw -O vmdk -o subformat=monolithicSparse input.raw output.vmdk",
+      "gotchas": [
+        "Not accepted by vSphere import APIs — use streamOptimized for cloud.",
+        "monolithicFlat (descriptor + -flat.vmdk) also exists; rarely needed for distribution.",
+        "VirtualBox accepts monolithicSparse; qemu-img output is compatible."
+      ],
+      "reproducible_roundtrip": false,
+      "roundtrip_note": "Non-deterministic descriptor fields same as streamOptimized."
+    },
+    {
+      "name": "vhd-fixed",
+      "description": "Microsoft VHD, fixed-size variant (footer-terminated flat image)",
+      "providers": ["Azure (page blob upload)", "Hyper-V", "Xen (some configs)"],
+      "conversion_from_raw": "qemu-img convert -f raw -O vpc -o subformat=fixed source.raw dest.vhd",
+      "qemu_img_cmd": "qemu-img convert -f raw -O vpc -o subformat=fixed input.raw output.vhd",
+      "gotchas": [
+        "CRITICAL: Azure requires VHD size aligned to 1 MiB. Footer is 512 bytes at end. Pre-align source before converting.",
+        "Alignment formula: aligned_size = ceil(virtual_size / 1048576) * 1048576",
+        "Azure accepts only fixed VHD or VHDX — dynamic VHD is REJECTED by import API.",
+        "The qemu-img format name is 'vpc' not 'vhd'. -O vhd does NOT exist.",
+        "Azure Generation 1 VMs require MBR disk; Generation 2 require VHDX or VHD with GPT.",
+        "Hyper-V Gen1 boots from VHD; Gen2 requires VHDX."
+      ],
+      "reproducible_roundtrip": false,
+      "roundtrip_note": "VHD footer contains UUID and timestamp. Data content reproducible; envelope is not."
+    },
+    {
+      "name": "vhdx",
+      "description": "Microsoft VHDX — modern VHD successor, log-structured, 1 PiB max",
+      "providers": ["Azure (Generation 2 VMs)", "Hyper-V 2012+"],
+      "conversion_from_raw": "qemu-img convert -f raw -O vhdx source.raw dest.vhdx",
+      "qemu_img_cmd": "qemu-img convert -f raw -O vhdx input.raw output.vhdx",
+      "gotchas": [
+        "VHDX has 1 MiB block alignment requirement same as VHD.",
+        "Azure Generation 2 VMs: VHDX preferred over VHD for UEFI boot.",
+        "qemu-img VHDX support is read-write since QEMU 2.9. Older: read-only.",
+        "VHDX log journal state affects output — not fully deterministic."
+      ],
+      "reproducible_roundtrip": false,
+      "roundtrip_note": "VHDX log journal introduces non-determinism."
+    },
+    {
+      "name": "ami",
+      "description": "AWS Machine Image — a cloud registration, not a file format",
+      "providers": ["AWS EC2"],
+      "conversion_from_raw": "Upload raw to S3, then: aws ec2 import-snapshot --disk-container file://container.json; then: aws ec2 register-image. For FreeBSD: bsdec2-image-upload (BSD-2-Clause).",
+      "qemu_img_cmd": null,
+      "gotchas": [
+        "AMI is a snapshot registration. The uploaded file is raw (or VMDK/VHD) via VM Import.",
+        "aws ec2 import-image supports: OVA, VHD, VHDX, VMDK, raw. For BSDs use import-snapshot + register-image.",
+        "bsdec2-image-upload handles FreeBSD AMI lifecycle: https://github.com/freebsd/bsdec2-image-upload (BSD-2-Clause).",
+        "vmimport IAM role must exist before import: https://docs.aws.amazon.com/vm-import/latest/userguide/required-permissions.html",
+        "import-image is async — poll ec2:DescribeImportImageTasks until Status=completed (15-60 min).",
+        "ENA network driver required for modern instance types. In FreeBSD mainline since 12.1. NetBSD: manual build required.",
+        "Regions are independent — copy AMI to each region via ec2:CopyImage.",
+        "Raw image must be <16 TiB. EBS volume size must match virtual disk size."
+      ],
+      "reproducible_roundtrip": "N/A",
+      "roundtrip_note": "AMI is a cloud construct. EBS snapshot data matches raw sectors uploaded."
+    },
+    {
+      "name": "ova",
+      "description": "Open Virtualization Archive — OVF descriptor + VMDK + manifest in ustar tar",
+      "providers": ["VMware vSphere", "VirtualBox", "Nutanix AHV", "oVirt/RHEV"],
+      "conversion_from_raw": "1. qemu-img convert -f raw -O vmdk -o subformat=streamOptimized src.raw disk.vmdk  2. Write OVF XML descriptor  3. SHA256 of disk.vmdk  4. Write .mf manifest  5. tar -cf image.ova --format=ustar disk.ovf disk.vmdk disk.mf (OVF MUST be first)",
+      "qemu_img_cmd": "qemu-img convert -f raw -O vmdk -o subformat=streamOptimized input.raw disk.vmdk",
+      "gotchas": [
+        "OVA is a tar archive — NOT gzip-compressed. Extension is .ova.",
+        "OVF XML must have correct DiskSection and VirtualHardwareSection. VMware is strict about CIM namespace.",
+        "Manifest file (.mf) must list SHA256 (or SHA1) of each file — vSphere verifies on import.",
+        "tar format must be ustar (POSIX), NOT GNU tar extensions. Use --format=ustar or pax -x ustar.",
+        "File order in tar is significant: OVF descriptor must be first entry.",
+        "VirtualBox OVF extension (vbox:Machine) is proprietary. Pure OVF 1.0/2.0 is cross-compatible.",
+        "OVF 2.0 supports multiple disks and ISOs; OVF 1.0 safer for broad compat."
+      ],
+      "reproducible_roundtrip": false,
+      "roundtrip_note": "OVF XML has timestamp and uuid fields. VMDK inside also non-deterministic."
+    },
+    {
+      "name": "vdi",
+      "description": "VirtualBox Disk Image — VirtualBox native format",
+      "providers": ["VirtualBox (local only) — no public cloud consumers"],
+      "conversion_from_raw": "qemu-img convert -f raw -O vdi source.raw dest.vdi",
+      "qemu_img_cmd": "qemu-img convert -f raw -O vdi input.raw output.vdi",
+      "gotchas": [
+        "VDI is VirtualBox-specific. No cloud provider accepts VDI for import.",
+        "VirtualBox can import VMDK and VHD directly — VDI output useful only for local dev/test.",
+        "VDI header contains UUID that changes on each conversion — not deterministic.",
+        "Prefer VMDK monolithic or VHD for cross-tool compatibility."
+      ],
+      "reproducible_roundtrip": false,
+      "roundtrip_note": "VDI UUID header is non-deterministic."
+    },
+    {
+      "name": "gce-tar",
+      "description": "Google Compute Engine — raw file named 'disk.raw' inside a gzip tar",
+      "providers": ["Google Cloud Platform"],
+      "conversion_from_raw": "cp source.raw disk.raw && tar -czvf image.tar.gz disk.raw",
+      "qemu_img_cmd": null,
+      "gotchas": [
+        "File inside tar MUST be named exactly 'disk.raw'.",
+        "The tar MUST be gzip-compressed (.tar.gz). Plain tar is rejected.",
+        "Max image size: 2 TiB. Must upload to GCS before import.",
+        "Import: gcloud compute images create NAME --source-uri=gs://bucket/image.tar.gz",
+        "GCE UEFI instances require --guest-os-features=UEFI_COMPATIBLE flag.",
+        "Declare VIRTIO_NET and VIRTIO_SCSI guest OS features for full performance.",
+        "FreeBSD: virtio_blk and vtnet in mainline. GCE provides FreeBSD UEFI firmware.",
+        "gcloud CLI: Apache-2.0. gsutil: Apache-2.0."
+      ],
+      "reproducible_roundtrip": true,
+      "roundtrip_note": "disk.raw inside is identical to source. gzip timestamp non-deterministic; use --mtime for full determinism."
+    }
+  ],
+  "converter_license_summary": {
+    "qemu-img": {
+      "license": "GPL-2.0-only",
+      "safe_to_use": true,
+      "rationale": "Invoked as external subprocess only. Genoa does not link against QEMU. GPL-2 copyleft does not propagate across exec() boundary.",
+      "reference": "https://www.qemu.org/license/"
+    },
+    "bsdec2-image-upload": {
+      "license": "BSD-2-Clause",
+      "safe_to_use": true,
+      "reference": "https://github.com/freebsd/bsdec2-image-upload"
+    },
+    "aws-cli": {
+      "license": "Apache-2.0",
+      "safe_to_use": true,
+      "reference": "https://github.com/aws/aws-cli"
+    },
+    "gcloud-cli": {
+      "license": "Apache-2.0",
+      "safe_to_use": true,
+      "reference": "https://cloud.google.com/sdk/docs"
+    },
+    "azure-cli": {
+      "license": "MIT",
+      "safe_to_use": true,
+      "reference": "https://github.com/Azure/azure-cli"
+    },
+    "ipxe": {
+      "license": "GPL-2.0",
+      "safe_to_use": false,
+      "rationale": "REJECTED — user has explicitly prohibited iPXE dependency. No path should silently depend on it."
+    }
+  }
+}

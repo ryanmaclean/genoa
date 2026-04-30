@@ -1,0 +1,21 @@
+[package]
+name    = "genoa-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# build.rs runs on the HOST (std available) and emits constants into the Rust
+# source tree via cargo:rustc-env. The crate itself is no_std so it can link
+# into the unikernel image.
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+sha2       = { workspace = true }
+hex        = { workspace = true }
+
+[build-dependencies]
+# toml — host only, never linked into kernel image. MIT OR Apache-2.0.
+toml = { workspace = true }
+sha2 = { workspace = true }
+hex  = { workspace = true }

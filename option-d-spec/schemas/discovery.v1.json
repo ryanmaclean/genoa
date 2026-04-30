@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genoa.dev/v1/schemas/discovery.v1.json",
+  "title": "genoa Discovery Response v1",
+  "description": "Schema for the JSON document served at GET /.well-known/genoa.json on any booted agent-host image. This is the single cold-start entry point for any LM discovering a host's capabilities. Defined following RFC 8615 well-known URI convention.",
+  "type": "object",
+  "required": ["genoa_version", "image", "agent_runtime", "catalog_url", "conformance"],
+  "additionalProperties": false,
+  "properties": {
+    "genoa_version": {
+      "type": "string",
+      "description": "genoa spec version implemented by this host.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "examples": ["1.0.0"]
+    },
+    "image": {
+      "type": "object",
+      "description": "Subset of image identity fields from genoa.toml. Full manifest available via manifest_url.",
+      "required": ["id", "name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "examples": ["sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"]
+        },
+        "name": {
+          "type": "string",
+          "examples": ["smolbsd-agent-host"]
+        },
+        "version": {
+          "type": "string",
+          "examples": ["0.1.0"]
+        },
+        "os": {
+          "type": "string",
+          "examples": ["freebsd"]
+        },
+        "architecture": {
+          "type": "string",
+          "examples": ["amd64"]
+        }
+      }
+    },
+    "agent_runtime": {
+      "type": "object",
+      "description": "Abbreviated runtime descriptor. Agents check this before attempting connection.",
+      "required": ["type", "endpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["mcp-server", "openai-compatible", "anthropic-compatible", "custom"],
+          "examples": ["mcp-server"]
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "examples": ["http://localhost:8080"]
+        },
+        "protocol_versions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "examples": [["2025-11-05"]]
+        },
+        "auth": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["none", "bearer", "mtls", "oauth2"]
+            }
+          }
+        },
+        "status": {
+          "type": "string",
+          "description": "Liveness status of the agent runtime at discovery time.",
+          "enum": ["running", "starting", "stopped", "error"],
+          "examples": ["running"]
+        }
+      }
+    },
+    "catalog_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL to the genoa catalog listing all schemas, examples, and conformance tests. Cold-start LMs MUST follow this to discover further resources.",
+      "examples": ["https://genoa.dev/v1/catalog.json"]
+    },
+    "manifest_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL where the full genoa.toml manifest (as JSON) can be retrieved.",
+      "examples": ["http://localhost/.well-known/genoa-manifest.json"]
+    },
+    "attestation_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL where the in-toto attestation for this image can be retrieved.",
+      "examples": ["http://localhost/.well-known/genoa-attestation.json"]
+    },
+    "capabilities_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL for the live capability list (MCP tool/list or equivalent). Agents call this to discover tools at runtime.",
+      "examples": ["http://localhost:8080/v1/tools/list"]
+    },
+    "conformance": {
+      "type": "object",
+      "description": "Self-reported conformance level. Verified by probe.nu — self-report alone does not grant conformance status.",
+      "required": ["level"],
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["L0", "L1", "L2", "L3"],
+          "description": "Highest conformance level this image claims. L0=no claim, L1=manifest+discovery, L2=L1+attestation, L3=L2+SLSA-2+SBOM.",
+          "examples": ["L1"]
+        },
+        "probe_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the conformance probe script that verifies this claim.",
+          "examples": ["https://genoa.dev/v1/conformance/probe.nu"]
+        },
+        "last_verified": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last successful external conformance verification.",
+          "examples": ["2026-04-30T12:00:00Z"]
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "description": "HAL-style links for discoverability. Agents can enumerate these to find spec resources.",
+      "additionalProperties": {
+        "type": "string",
+        "format": "uri"
+      },
+      "examples": [
+        {
+          "self": "http://localhost/.well-known/genoa.json",
+          "schema": "https://genoa.dev/v1/schemas/discovery.v1.json",
+          "catalog": "https://genoa.dev/v1/catalog.json"
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "genoa_version": "1.0.0",
+      "image": {
+        "id": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        "name": "smolbsd-agent-host",
+        "version": "0.1.0",
+        "os": "freebsd",
+        "architecture": "amd64"
+      },
+      "agent_runtime": {
+        "type": "mcp-server",
+        "endpoint": "http://localhost:8080",
+        "protocol_versions": ["2025-11-05"],
+        "auth": {"type": "none"},
+        "status": "running"
+      },
+      "catalog_url": "https://genoa.dev/v1/catalog.json",
+      "conformance": {
+        "level": "L1",
+        "probe_url": "https://genoa.dev/v1/conformance/probe.nu"
+      }
+    }
+  ]
+}

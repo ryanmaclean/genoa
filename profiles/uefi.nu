@@ -1,0 +1,365 @@
+#!/usr/bin/env nu
+# profiles/uefi.nu — UEFI image profile for genoa
+# Purpose: Build minimal FreeBSD images that boot via UEFI (loader.efi).
+# Bootloader: FreeBSD loader.efi (BSD-2-Clause) — vendorable.
+# Partitions: ESP 512M FAT32 (p1) + freebsd-ufs remainder UFS2 (p2).
+# Targets: amd64 (BOOTX64.EFI) and aarch64 (BOOTAA64.EFI).
+#
+# All destructive steps carry action="would-run".
+# action="real" steps execute their logic unconditionally.
+# dry_run is always honoured — never touch system state without --execute (not yet wired).
+#
+# License: BSD-2-Clause
+# SPDX-License-Identifier: BSD-2-Clause
+
+# ---------------------------------------------------------------------------
+# validate_manifest — step 1 (real)
+# Check required manifest fields and return a structured result record.
+# ---------------------------------------------------------------------------
+def validate_manifest [m: record] {
+    let errors = []
+
+    let errors = if "image" not-in $m {
+        $errors | append "missing: image"
+    } else { $errors }
+
+    let errors = if "target" not-in $m {
+        $errors | append "missing: target"
+    } else { $errors }
+
+    let errors = if "target" in $m and "arch" not-in $m.target {
+        $errors | append "missing: target.arch"
+    } else { $errors }
+
+    {valid: (($errors | length) == 0), errors: $errors}
+}
+
+# ---------------------------------------------------------------------------
+# resolve_agent_url — helper used by step 2 (real)
+# Build the download URL for the agent binary without fetching it.
+# ---------------------------------------------------------------------------
+def resolve_agent_url [manifest: record] {
+    let agent = $manifest | get agent? | default {}
+    let name = $agent | get name? | default ""
+    if $name == "ii-agent" {
+        let repo = $agent | get source? | get repo? | default "studio/ii-agent"
+        let tag  = $agent | get source? | get tag?  | default "latest"
+        let asset = $agent | get source? | get asset? | default "ii-agent"
+        $"http://gitea.local:3000/($repo)/releases/download/($tag)/($asset)"
+    } else if $name == "" {
+        null
+    } else {
+        let url = $agent | get source? | get url? | default null
+        $url
+    }
+}
+
+# ---------------------------------------------------------------------------
+# render_loader_conf — step 10 (real)
+# Substitute Tera variables and return the rendered string.
+# (Full Tera engine not available in Nushell; we substitute manually.)
+# ---------------------------------------------------------------------------
+def render_loader_conf [manifest: record] {
+    let hostname     = $manifest | get network? | get hostname? | default ($manifest | get image? | get name? | default "freebsd")
+    let console_speed = $manifest | get boot? | get console_speed? | default 115200
+    let kern_hz      = $manifest | get boot? | get kern_hz? | default 100
+
+    let tmpl_path = ([($env.PWD) "templates" "uefi" "loader.conf.tera"] | path join)
+    let tmpl = if ($tmpl_path | path exists) {
+        open --raw $tmpl_path
+    } else {
+        # Inline fallback — matches templates/uefi/loader.conf.tera exactly
+        "hint.hostname.0=\"{{ hostname }}\"\ncomconsole_speed=\"{{ console_speed }}\"\nconsole=\"comconsole,vidconsole\"\nboot_multicons=\"YES\"\nboot_serial=\"YES\"\nkern.hz={{ kern_hz }}\nautoboot_delay=\"3\"\nif_ena_load=\"YES\"\ngve_load=\"YES\"\n"
+    }
+
+    $tmpl
+        | str replace --all "{{ hostname }}" $hostname
+        | str replace --all "{{ console_speed }}" ($console_speed | into string)
+        | str replace --all "{{ kern_hz }}" ($kern_hz | into string)
+}
+
+# ---------------------------------------------------------------------------
+# render_rc_conf — step 11 (real)
+# ---------------------------------------------------------------------------
+def render_rc_conf [manifest: record] {
+    let hostname      = $manifest | get network? | get hostname? | default ($manifest | get image? | get name? | default "freebsd")
+    # Prefer rc_service.name (underscored) for the rc.conf variable; fall back to agent.name with hyphens replaced
+    let agent_raw     = $manifest | get agent? | get name? | default "agent"
+    let agent_name    = $manifest | get agent? | get rc_service? | get name? | default ($agent_raw | str replace --all "-" "_")
+    let agent_enabled = $manifest | get agent? | get rc_service? | get enabled? | default true
+
+    let tmpl_path = ([($env.PWD) "templates" "uefi" "rc.conf.tera"] | path join)
+    let tmpl = if ($tmpl_path | path exists) {
+        open --raw $tmpl_path
+    } else {
+        "hostname=\"{{ hostname }}\"\nifconfig_DEFAULT=\"DHCP\"\nsshd_enable=\"YES\"\nntpd_enable=\"YES\"\nntpd_sync_on_start=\"YES\"\ngrowfs_enable=\"YES\"\nvirtio_random_load=\"YES\"\n{{ agent_name }}_enable=\"{{ agent_enabled }}\"\n"
+    }
+
+    # Handle the {% if agent_enabled %} block manually
+    let agent_enable_str = if $agent_enabled { "YES" } else { "NO" }
+    let agent_line = if $agent_enabled {
+        $"($agent_name)_enable=\"YES\""
+    } else {
+        $"# ($agent_name)_enable=\"NO\"  # agent disabled in manifest"
+    }
+
+    $tmpl
+        | str replace --all "{{ hostname }}" $hostname
+        | str replace --all "{{ agent_name }}" $agent_name
+        | str replace --all "{{ agent_enabled }}" $agent_enable_str
+        | str replace --all $"{% if agent_enabled %}($agent_name)_enable=\"YES\"{% else %}# ($agent_name)_enable=\"NO\"  # agent disabled in manifest{% endif %}" $agent_line
+}
+
+# ---------------------------------------------------------------------------
+# emit_receipt — step 16 (real)
+# Compute sha256 of a placeholder path and build a receipt record.
+# ---------------------------------------------------------------------------
+def emit_receipt [manifest: record] {
+    let image_name = $manifest | get image? | get name? | default "unknown"
+    let image_path = $"/tmp/genoa-($image_name).raw"
+
+    let sha256 = ("placeholder-sha256-for-dry-run" | hash sha256)
+
+    {
+        schema_version: "1"
+        receipt_id: (random uuid)
+        image_path: $image_path
+        image_sha256: $sha256
+        manifest_sha256: ($manifest | to json | hash sha256)
+        built_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        profile: "uefi"
+        placeholder: true
+    }
+}
+
+# ---------------------------------------------------------------------------
+# uefi_build — public entry point
+# ---------------------------------------------------------------------------
+export def uefi_build [manifest: record, dry_run: bool = false] {
+    # ── step 1: validate_manifest (real) ───────────────────────────────────
+    let validation = validate_manifest $manifest
+
+    # ── step 2: resolve_artifacts (real — build URL, don't fetch) ──────────
+    let agent_url = resolve_agent_url $manifest
+
+    # ── step 10: render loader.conf (real) ─────────────────────────────────
+    let loader_conf_rendered = render_loader_conf $manifest
+
+    # ── step 11: render rc.conf (real) ─────────────────────────────────────
+    let rc_conf_rendered = render_rc_conf $manifest
+
+    # ── step 13: write authorized_keys to temp file (real) ─────────────────
+    let ssh_keys = $manifest | get network? | get ssh_keys? | default []
+    let authorized_keys_path = $"/tmp/genoa-authorized-keys-($manifest | get image? | get name? | default 'unknown')"
+    if ($ssh_keys | length) > 0 {
+        $ssh_keys | str join "\n" | save --force $authorized_keys_path
+    }
+
+    # ── step 16: emit receipt (real) ───────────────────────────────────────
+    let receipt = emit_receipt $manifest
+
+    # Arch-dependent EFI filename
+    let arch = $manifest | get target? | get arch? | default "amd64"
+    let efi_filename = if $arch == "aarch64" { "BOOTaa64.EFI" } else { "BOOTx64.EFI" }
+
+    # Derived image fields
+    let image_name   = $manifest | get image? | get name? | default "unknown"
+    let image_size   = $manifest | get image? | get size_mb? | default 20480
+    let output_image = $"/tmp/genoa-($image_name).raw"
+    let hostname     = $manifest | get network? | get hostname? | default $image_name
+    let agent_name   = $manifest | get agent? | get name? | default ""
+    let os_version   = $manifest | get target? | get os_version? | default "15.0-RELEASE"
+    let os_arch      = if $arch == "aarch64" { "arm64" } else { $arch }
+
+    {
+        schema_version: "1"
+        profile: "uefi"
+        dry_run: $dry_run
+        validation: $validation
+        steps: [
+            # ── 1. validate_manifest (real) ─────────────────────────────────
+            {
+                step: 1
+                label: "validate_manifest"
+                action: "real"
+                description: "Validate required manifest fields."
+                result: $validation
+            }
+
+            # ── 2. resolve_artifacts (real) ──────────────────────────────────
+            {
+                step: 2
+                label: "resolve_artifacts"
+                action: "real"
+                description: "Build agent binary URL from gitea.local. No network call."
+                agent_url: $agent_url
+            }
+
+            # ── 3. create_disk_image (would-run) ────────────────────────────
+            {
+                step: 3
+                label: "create_disk_image"
+                action: "would-run"
+                cmd: $"truncate -s ($image_size)M ($output_image)"
+                description: $"Create ($image_size) MiB raw disk image at ($output_image)."
+            }
+
+            # ── 4. partition_gpt (would-run) ────────────────────────────────
+            {
+                step: 4
+                label: "partition_gpt"
+                action: "would-run"
+                cmds: [
+                    $"gpart create -s gpt ($output_image)"
+                    $"gpart add -t efi    -s 512M -l esp    ($output_image)"
+                    $"gpart add -t freebsd-ufs    -l rootfs ($output_image)"
+                ]
+                description: "Create GPT; add ESP (512 MiB FAT32) + freebsd-ufs (remainder)."
+                layout: {
+                    p1: {type: "efi",         size: "512M", label: "esp",    purpose: "EFI System Partition"}
+                    p2: {type: "freebsd-ufs", size: "remainder", label: "rootfs", purpose: "FreeBSD UFS2 root"}
+                }
+            }
+
+            # ── 5. format_esp (would-run) ────────────────────────────────────
+            {
+                step: 5
+                label: "format_esp"
+                action: "would-run"
+                cmd: $"newfs_msdos -F 32 -L ESP ($output_image)p1"
+                description: "Format ESP partition as FAT32."
+            }
+
+            # ── 6. install_efi_loader (would-run) ────────────────────────────
+            {
+                step: 6
+                label: "install_efi_loader"
+                action: "would-run"
+                cmds: [
+                    $"mount -t msdosfs ($output_image)p1 /mnt/esp"
+                    $"mkdir -p /mnt/esp/EFI/BOOT"
+                    $"cp /boot/loader.efi /mnt/esp/EFI/BOOT/($efi_filename)"
+                    "umount /mnt/esp"
+                ]
+                description: $"Copy loader.efi to ESP/EFI/BOOT/($efi_filename) for ($arch) UEFI fallback path. License: BSD-2-Clause."
+                efi_binary: $efi_filename
+                arch: $arch
+            }
+
+            # ── 7. format_rootfs (would-run) ─────────────────────────────────
+            {
+                step: 7
+                label: "format_rootfs"
+                action: "would-run"
+                cmd: $"newfs -U ($output_image)p2"
+                description: "Format rootfs partition as UFS2 with soft-updates (-U)."
+            }
+
+            # ── 8. extract_base (would-run) ───────────────────────────────────
+            {
+                step: 8
+                label: "extract_base"
+                action: "would-run"
+                cmds: [
+                    $"mount ($output_image)p2 /mnt/rootfs"
+                    $"tar -xf /usr/freebsd-dist/base.txz -C /mnt/rootfs"
+                ]
+                description: $"Extract FreeBSD ($os_version) base.txz to mounted rootfs."
+            }
+
+            # ── 9. extract_kernel (would-run) ─────────────────────────────────
+            {
+                step: 9
+                label: "extract_kernel"
+                action: "would-run"
+                cmd: $"tar -xf /usr/freebsd-dist/kernel.txz -C /mnt/rootfs"
+                description: $"Extract FreeBSD ($os_version) kernel.txz to mounted rootfs."
+            }
+
+            # ── 10. configure_loader (real) ────────────────────────────────────
+            {
+                step: 10
+                label: "configure_loader"
+                action: "real"
+                description: "Render templates/uefi/loader.conf.tera → /boot/loader.conf content."
+                output_path: "/mnt/rootfs/boot/loader.conf"
+                rendered: $loader_conf_rendered
+            }
+
+            # ── 11. configure_rc (real) ────────────────────────────────────────
+            {
+                step: 11
+                label: "configure_rc"
+                action: "real"
+                description: "Render templates/uefi/rc.conf.tera → /etc/rc.conf content."
+                output_path: "/mnt/rootfs/etc/rc.conf"
+                rendered: $rc_conf_rendered
+            }
+
+            # ── 12. inject_agent (would-run) ──────────────────────────────────
+            {
+                step: 12
+                label: "inject_agent"
+                action: "would-run"
+                cmds: (if ($agent_name | is-empty) { [] } else { [
+                    $"cp ./out/($agent_name) /mnt/rootfs/usr/local/bin/($agent_name)"
+                    $"chmod 755 /mnt/rootfs/usr/local/bin/($agent_name)"
+                    $"cp ./rc.d/($agent_name) /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
+                    $"chmod 755 /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
+                ]})
+                description: $"Copy ($agent_name) binary and rc.d service script into rootfs."
+                agent_name: $agent_name
+                agent_url: $agent_url
+            }
+
+            # ── 13. inject_ssh_keys (real) ─────────────────────────────────────
+            {
+                step: 13
+                label: "inject_ssh_keys"
+                action: "real"
+                description: "Write SSH authorized_keys from manifest.network.ssh_keys to temp file."
+                key_count: ($ssh_keys | length)
+                temp_path: $authorized_keys_path
+                target_path: "/mnt/rootfs/root/.ssh/authorized_keys"
+                note: (if ($ssh_keys | length) > 0 {
+                    $"($ssh_keys | length) keys written to ($authorized_keys_path)"
+                } else {
+                    "No ssh_keys in manifest; authorized_keys not written."
+                })
+            }
+
+            # ── 14. cloud_init_clean (would-run) ──────────────────────────────
+            {
+                step: 14
+                label: "cloud_init_clean"
+                action: "would-run"
+                cmds: [
+                    "rm -rf /mnt/rootfs/var/db/cloudinit"
+                    "rm -rf /mnt/rootfs/tmp/cloud-init"
+                ]
+                description: "Remove stale cloud-init state to prevent instance-id reuse on first boot."
+            }
+
+            # ── 15. umount_and_compact (would-run) ────────────────────────────
+            {
+                step: 15
+                label: "umount_and_compact"
+                action: "would-run"
+                cmds: [
+                    "umount /mnt/rootfs"
+                    $"sync ($output_image)"
+                ]
+                description: "Unmount rootfs; sync image to disk. (mkuzip optional for compressed images.)"
+            }
+
+            # ── 16. emit_receipt (real) ────────────────────────────────────────
+            {
+                step: 16
+                label: "emit_receipt"
+                action: "real"
+                description: "Compute sha256 of output image path and emit receipt.json."
+                receipt: $receipt
+            }
+        ]
+    }
+}

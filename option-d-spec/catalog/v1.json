@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "genoa_catalog_version": "1.0.0",
+  "description": "genoa spec catalog — single discovery endpoint for all schemas, examples, and conformance tools. A cold-start LM fetches this document to discover all genoa resources in one call. Base URL: https://genoa.dev/v1/",
+  "base_url": "https://genoa.dev/v1",
+  "schemas": {
+    "manifest.v1": {
+      "url": "https://genoa.dev/v1/schemas/manifest.v1.json",
+      "description": "JSON Schema 2020-12 for genoa.toml — image identity, agent runtime, capabilities, attestation policy, SBOM ref.",
+      "local_path": "schemas/manifest.v1.json",
+      "mime_type": "application/schema+json",
+      "version": "1.0.0"
+    },
+    "discovery.v1": {
+      "url": "https://genoa.dev/v1/schemas/discovery.v1.json",
+      "description": "JSON Schema 2020-12 for GET /.well-known/genoa.json response — cold-start agent discovery endpoint.",
+      "local_path": "schemas/discovery.v1.json",
+      "mime_type": "application/schema+json",
+      "version": "1.0.0"
+    },
+    "attestation.v1": {
+      "url": "https://genoa.dev/v1/schemas/attestation.v1.json",
+      "description": "JSON Schema 2020-12 for in-toto v1 Statement with predicateType 'https://genoa.dev/AgentHost/v1'.",
+      "local_path": "schemas/attestation.v1.json",
+      "mime_type": "application/schema+json",
+      "version": "1.0.0"
+    },
+    "capability.v1": {
+      "url": "https://genoa.dev/v1/schemas/capability.v1.json",
+      "description": "JSON Schema 2020-12 for a single capability declaration — extends MCP tool/list shape with provenance field.",
+      "local_path": "schemas/capability.v1.json",
+      "mime_type": "application/schema+json",
+      "version": "1.0.0"
+    }
+  },
+  "examples": {
+    "manifest": {
+      "url": "https://genoa.dev/v1/examples/manifest.toml",
+      "description": "Valid example genoa.toml manifest with 3 capabilities.",
+      "local_path": "examples/manifest.toml",
+      "validates_against": "manifest.v1"
+    },
+    "discovery": {
+      "url": "https://genoa.dev/v1/examples/discovery.json",
+      "description": "Valid example /.well-known/genoa.json discovery response.",
+      "local_path": "examples/discovery.json",
+      "validates_against": "discovery.v1"
+    },
+    "attestation": {
+      "url": "https://genoa.dev/v1/examples/attestation.json",
+      "description": "Valid example in-toto attestation with genoa AgentHost/v1 predicate.",
+      "local_path": "examples/attestation.json",
+      "validates_against": "attestation.v1"
+    }
+  },
+  "conformance": {
+    "probe": {
+      "url": "https://genoa.dev/v1/conformance/probe.nu",
+      "description": "Nushell conformance probe. Run against a live host: `probe.nu run <hostname> [--level L1|L2|L3]`. Emits structured JSON pass/fail.",
+      "local_path": "conformance/probe.nu",
+      "runtime": "nushell >= 0.100.0",
+      "license": "BSD-2-Clause"
+    },
+    "validate": {
+      "url": "https://genoa.dev/v1/conformance/validate.nu",
+      "description": "Nushell schema validator. `validate.nu manifest <file>` | `validate.nu attestation <file>`. Emits {valid: bool, errors: [...]}.",
+      "local_path": "conformance/validate.nu",
+      "runtime": "nushell >= 0.100.0",
+      "license": "BSD-2-Clause"
+    }
+  },
+  "spec": {
+    "genoa-v1": {
+      "url": "https://genoa.dev/v1/spec/genoa-v1.md",
+      "description": "genoa v1 specification — Scope, Terminology, Manifest, Discovery, Attestation Envelope, Capability Declarations, Conformance Levels.",
+      "local_path": "spec/genoa-v1.md",
+      "license": "Apache-2.0"
+    }
+  },
+  "links": {
+    "self": "https://genoa.dev/v1/catalog.json",
+    "schema": "https://json-schema.org/draft/2020-12/schema",
+    "repo": "https://github.com/ryanmaclean/genoa"
+  },
+  "three_call_discovery": {
+    "description": "A cold LM discovers and validates a host in 3 calls:",
+    "call_1": "GET https://genoa.dev/v1/catalog.json → this document. Discover all resource URLs.",
+    "call_2": "GET schemas.manifest.v1.url → fetch the manifest schema to understand required fields.",
+    "call_3": "nu validate.nu manifest <image-manifest.toml> → structured pass/fail conformance verdict."
+  }
+}

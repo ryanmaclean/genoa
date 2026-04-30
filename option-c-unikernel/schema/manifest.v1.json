@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ryanmaclean/genoa/schema/manifest.v1.json",
+  "title": "Genoa Manifest v1",
+  "description": "Compile-time manifest baked into a Genoa unikernel image. Parsed by genoa-config/build.rs at cargo build time; the resulting constants are embedded as &'static str in the kernel binary.",
+  "type": "object",
+  "required": ["schema_version", "identity", "network", "tasks", "tls", "attestation"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "SemVer major version of this schema. Increment on breaking changes.",
+      "pattern": "^[0-9]+$",
+      "examples": ["1"]
+    },
+    "identity": {
+      "type": "object",
+      "description": "Agent identity block. Baked into the image; cannot be changed at runtime.",
+      "required": ["agent_id", "attestation_pubkey"],
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "Unique human-readable identifier for this agent instance.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "examples": ["genoa-c-demo-01"]
+        },
+        "attestation_pubkey": {
+          "type": "string",
+          "description": "Hex-encoded Ed25519 public key (64 hex chars = 32 bytes). Used by verifiers to authenticate /v1/status responses.",
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "examples": ["d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"]
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "description": "Network configuration applied at boot. DHCP is attempted first when dhcp=true.",
+      "required": ["dhcp"],
+      "additionalProperties": false,
+      "properties": {
+        "dhcp": {
+          "type": "boolean",
+          "description": "Whether to attempt DHCPv4 on boot.",
+          "default": true
+        },
+        "static_ip": {
+          "type": "string",
+          "description": "IPv4 dotted-decimal fallback address, used when dhcp=false or DHCP times out.",
+          "format": "ipv4",
+          "examples": ["10.0.2.15"]
+        },
+        "static_netmask": {
+          "type": "string",
+          "format": "ipv4",
+          "examples": ["255.255.255.0"]
+        },
+        "static_gateway": {
+          "type": "string",
+          "format": "ipv4",
+          "examples": ["10.0.2.2"]
+        },
+        "dhcp_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 30000,
+          "default": 5000,
+          "description": "Milliseconds to wait for a DHCP ACK before falling back to static config."
+        }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "description": "Task polling configuration.",
+      "required": ["endpoint", "result_endpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "HTTPS URL polled for the next task (HTTP GET, returns TaskEnvelope JSON).",
+          "examples": ["https://genoa.example.com/v1/tasks/next"]
+        },
+        "result_endpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "HTTPS URL for posting task results (HTTP POST, body is TaskResult JSON).",
+          "examples": ["https://genoa.example.com/v1/tasks/result"]
+        },
+        "poll_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000,
+          "default": 2000,
+          "description": "Milliseconds between /v1/tasks/next polls when the queue is empty."
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 5,
+          "description": "Maximum consecutive network failures before the agent reboots (Hermit exit)."
+        }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "description": "TLS trust anchor configuration.",
+      "required": ["ca_bundle_path"],
+      "additionalProperties": false,
+      "properties": {
+        "ca_bundle_path": {
+          "type": "string",
+          "description": "Path (relative to workspace root) of a PEM CA bundle embedded by build.rs. In production, replace with a pinned DER root.",
+          "examples": ["tls/ca-bundle.pem"]
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "description": "Attestation signing configuration.",
+      "required": ["sign_responses"],
+      "additionalProperties": false,
+      "properties": {
+        "sign_responses": {
+          "type": "boolean",
+          "description": "If true, /v1/status responses are signed with the agent's Ed25519 key.",
+          "default": true
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1",
+      "identity": {
+        "agent_id": "genoa-c-demo-01",
+        "attestation_pubkey": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "network": {
+        "dhcp": true,
+        "static_ip": "10.0.2.15",
+        "static_netmask": "255.255.255.0",
+        "static_gateway": "10.0.2.2",
+        "dhcp_timeout_ms": 5000
+      },
+      "tasks": {
+        "endpoint": "https://genoa.example.com/v1/tasks/next",
+        "result_endpoint": "https://genoa.example.com/v1/tasks/result",
+        "poll_interval_ms": 2000,
+        "max_retries": 5
+      },
+      "tls": {
+        "ca_bundle_path": "tls/ca-bundle.pem"
+      },
+      "attestation": {
+        "sign_responses": true
+      }
+    }
+  ]
+}
