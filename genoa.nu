@@ -323,14 +323,126 @@ def "main validate" [manifest_file: string] {
 }
 
 def "main verify" [image: string, receipt_file: string] {
-  if not ($image | path exists) {
-    error make {msg: $"image not found: ($image)"}
+  mut checks = []
+  mut errors = []
+
+  # 1. image_exists
+  let image_ok = ($image | path exists)
+  $checks = ($checks | append {check: "image_exists", pass: $image_ok, detail: (if $image_ok { $"($image) exists" } else { $"image not found: ($image)" })})
+  if not $image_ok { $errors = ($errors | append $"image not found: ($image)") }
+
+  # 2. receipt_exists
+  let receipt_ok = ($receipt_file | path exists)
+  $checks = ($checks | append {check: "receipt_exists", pass: $receipt_ok, detail: (if $receipt_ok { $"($receipt_file) exists" } else { $"receipt not found: ($receipt_file)" })})
+  if not $receipt_ok { $errors = ($errors | append $"receipt not found: ($receipt_file)") }
+
+  # Early return if either file is missing — nothing else can proceed
+  if not $image_ok or not $receipt_ok {
+    return {
+      action: "verify"
+      image: $image
+      receipt_file: $receipt_file
+      receipt_id: "unknown"
+      checks: $checks
+      valid: false
+      errors: $errors
+    }
   }
-  if not ($receipt_file | path exists) {
-    error make {msg: $"receipt not found: ($receipt_file)"}
-  }
+
   let r = open $receipt_file
-  {action: "verify", image: $image, receipt_id: ($r.receipt_id? | default "unknown")}
+
+  # 3. receipt_parse — confirm required fields are present
+  # hashes may be nested (v1 schema) or flat (legacy build output)
+  let receipt_id    = ($r.receipt_id? | default "")
+  let image_sha256  = if ("hashes" in $r) {
+    ($r.hashes?.image_sha256? | default "")
+  } else {
+    ($r.image_sha256? | default "")
+  }
+  let manifest_sha256 = if ("hashes" in $r) {
+    ($r.hashes?.manifest_sha256? | default "")
+  } else {
+    ($r.manifest_sha256? | default "")
+  }
+  let manifest_path = if ("hashes" in $r) {
+    # v1 schema: manifest path is top-level in image or in a manifest_path field
+    ($r.manifest_path? | default "")
+  } else {
+    ($r.manifest_path? | default "")
+  }
+
+  let parse_ok = ($receipt_id != "") and ($image_sha256 != "") and ($manifest_sha256 != "")
+  let parse_detail = if $parse_ok {
+    "receipt_id, image_sha256, manifest_sha256 present"
+  } else {
+    let missing = (
+      []
+      | if $receipt_id    == "" { append "receipt_id" }    else { $in }
+      | if $image_sha256  == "" { append "image_sha256" }  else { $in }
+      | if $manifest_sha256 == "" { append "manifest_sha256" } else { $in }
+    )
+    $"missing fields: ($missing | str join ', ')"
+  }
+  $checks = ($checks | append {check: "receipt_parse", pass: $parse_ok, detail: $parse_detail})
+  if not $parse_ok { $errors = ($errors | append $parse_detail) }
+
+  # 4. image_sha256_match — compute sha256 of the image file
+  let computed_image_sha256 = if $image_ok {
+    if $nu.os-info.name == "macos" {
+      ^shasum -a 256 $image | str trim | split row " " | first
+    } else {
+      ^sha256sum $image | str trim | split row " " | first
+    }
+  } else { "" }
+
+  let img_hash_ok = ($computed_image_sha256 == $image_sha256) and ($image_sha256 != "")
+  let img_hash_detail = if $image_sha256 == "" {
+    "skipped — receipt has no image_sha256"
+  } else if $img_hash_ok {
+    "sha256 matches receipt"
+  } else {
+    $"MISMATCH: got ($computed_image_sha256) expected ($image_sha256)"
+  }
+  $checks = ($checks | append {check: "image_sha256", pass: $img_hash_ok, detail: $img_hash_detail})
+  if not $img_hash_ok { $errors = ($errors | append $img_hash_detail) }
+
+  # 5. manifest_sha256_match — only if manifest_path is set and exists on disk
+  let manifest_check = if $manifest_path == "" {
+    {check: "manifest_sha256", pass: true, detail: "skipped — manifest_path not recorded in receipt"}
+  } else if not ($manifest_path | path exists) {
+    {check: "manifest_sha256", pass: true, detail: $"warn: manifest file ($manifest_path) not found on disk — skipping hash check"}
+  } else {
+    let computed_manifest_sha256 = if $nu.os-info.name == "macos" {
+      ^shasum -a 256 $manifest_path | str trim | split row " " | first
+    } else {
+      ^sha256sum $manifest_path | str trim | split row " " | first
+    }
+    let mf_ok = ($computed_manifest_sha256 == $manifest_sha256)
+    {
+      check: "manifest_sha256"
+      pass: $mf_ok
+      detail: (if $mf_ok { "manifest sha256 matches receipt" } else { $"MISMATCH: got ($computed_manifest_sha256) expected ($manifest_sha256)" })
+    }
+  }
+  $checks = ($checks | append $manifest_check)
+  # manifest mismatch is a warning only — does not fail valid
+
+  # 6. receipt_id_present — non-empty and not all-zeros
+  let id_all_zeros = ($receipt_id | str replace --all "0" "" | str replace --all "-" "" | str length) == 0
+  let id_ok = ($receipt_id != "") and (not $id_all_zeros)
+  let id_detail = if $id_ok { $"receipt_id ($receipt_id)" } else if $receipt_id == "" { "receipt_id is empty" } else { "receipt_id is all-zeros placeholder" }
+  $checks = ($checks | append {check: "receipt_id_present", pass: $id_ok, detail: $id_detail})
+  if not $id_ok { $errors = ($errors | append $id_detail) }
+
+  {
+    action: "verify"
+    image: $image
+    receipt_file: $receipt_file
+    receipt_id: $receipt_id
+    checks: $checks
+    valid: ($errors | is-empty)
+    errors: $errors
+  }
 }
 
 def "main publish" [
@@ -408,4 +520,4 @@ def schema [] { open "schema/manifest.v1.json" }
 def describe [f: string] { if not ($f | path exists) { error make {msg: $"not found: ($f)"} }; open $f }
 def build [f: string] { {action: "stub", note: "use: nu genoa.nu build <manifest>"} }
 def deploy [f: string, p: string] { {action: "stub", note: "use: nu genoa.nu deploy <manifest> --provider <id>"} }
-def verify [i: string, r: string] { {action: "stub"} }
+def verify [i: string, r: string] { main verify $i $r }

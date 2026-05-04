@@ -1,168 +1,231 @@
+# BSD 2-Clause License
+# Copyright (c) 2026 genoa contributors
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
 # OCI BYOI qcow2 deploy adapter
-# Path 0: convert raw → qcow2 → upload to Object Storage → import as custom image
+# Path: convert raw → qcow2 → upload to Object Storage → import as custom image → launch instance
+# oci-cli is UPL-1.0 — invoked as external subprocess only, never linked or vendored.
 
-source /Users/studio/genoa/formats/convert.nu
+source formats/convert.nu
 
-def check-oci-cli [] {
-  if ($env.PATH | split row (char esep) | any { |p| ($p | path join "oci" | path exists) }) {
-    return "oci"
-  }
+export def oci_deploy [
+  manifest: record
+  image_path: string
+  --dry-run        # Return the deployment plan without executing any steps
+] {
+  let dry_run = $dry_run
 
-  if ("/opt/homebrew/bin/oci" | path exists) {
-    return "/opt/homebrew/bin/oci"
-  }
+  # ── Step 0 — credential and tool check ────────────────────────────────────
+  let oci_cli = if ("/opt/homebrew/bin/oci" | path exists) { "/opt/homebrew/bin/oci" }
+                else if ((which oci | length) > 0) { "oci" }
+                else { null }
+  let oci_config = ($env.HOME | path join ".oci" "config")
 
-  null
-}
+  # When dry-run, skip credential check and return the plan
+  if $dry_run {
+    let image_name = $manifest.image?.name? | default "genoa-freebsd"
+    let compartment_id = $manifest.deploy?.oci_compartment_id? | default ""
+    let bucket = $manifest.deploy?.oci_bucket? | default "genoa-images"
+    let namespace = $manifest.deploy?.oci_namespace? | default "<oci_namespace>"
+    let subnet_id = $manifest.deploy?.oci_subnet_id? | default "<subnet-id>"
+    let shape = $manifest.deploy?.oci_shape? | default "VM.Standard.A1.Flex"
+    let qcow2_path = if ($image_path | str ends-with ".qcow2") {
+      $image_path
+    } else {
+      $image_path | str replace --regex '\.[^.]+$' '.qcow2'
+    }
+    let object_name = ($qcow2_path | path basename)
 
-export def oci_deploy [manifest: record, image_path: string] {
-  # oci-cli is UPL-1.0 — invoked as external subprocess only
-  let oci_cli = check-oci-cli
-  let image_name = (if ("name" in $manifest) { $manifest.name } else { "genoa-freebsd" })
-  let compartment_id = (if ("compartment_id" in $manifest) { $manifest.compartment_id } else { "" })
-  let bucket_name = (if ("bucket_name" in $manifest) { $manifest.bucket_name } else { "genoa-images" })
-  let os_version = (if ("os_version" in $manifest) { $manifest.os_version } else { "15.0" })
-
-  # Verify image exists
-  let image_exists = $image_path | path exists
-
-  if (not $image_exists) {
     return {
-      action: "failed"
-      error: $"Image file not found: ($image_path)"
-      step: 1
+      provider: "oci"
+      dry_run: true
+      path: "Path 0: BYOI (qcow2 via Object Storage)"
+      manifest: $manifest
+      image_path: $image_path
+      qcow2_path: $qcow2_path
+      plan: {
+        steps: [
+          {
+            step: 0
+            action: "would-run"
+            description: "Credential and tool check"
+            checks: [
+              "oci CLI present at /opt/homebrew/bin/oci or on PATH"
+              $"~/.oci/config exists at ($oci_config)"
+            ]
+          }
+          {
+            step: 1
+            action: "would-run"
+            command: "convert_to_qcow2"
+            description: "Convert image to qcow2 format if not already qcow2"
+            args: { input: $image_path, output: $qcow2_path }
+            notes: ["qemu-img is GPL-2 — invoked as external subprocess only"]
+            would_run: $"qemu-img convert -O qcow2 -c ($image_path) ($qcow2_path)"
+          }
+          {
+            step: 2
+            action: "would-run"
+            command: "oci os object put"
+            description: "Upload qcow2 to OCI Object Storage"
+            args: { namespace: $namespace, bucket_name: $bucket, file: $qcow2_path, name: $object_name }
+            would_run: $"oci os object put --namespace ($namespace) --bucket-name ($bucket) --file ($qcow2_path) --name ($object_name)"
+          }
+          {
+            step: 3
+            action: "would-run"
+            command: "oci compute image import from-object"
+            description: "Import qcow2 as OCI custom image"
+            args: {
+              namespace: $namespace
+              bucket_name: $bucket
+              name: $object_name
+              compartment_id: $compartment_id
+              display_name: $image_name
+              source_image_type: "QCOW2"
+            }
+            would_run: $"oci compute image import from-object --namespace ($namespace) --bucket-name ($bucket) --name ($object_name) --compartment-id ($compartment_id) --display-name ($image_name) --source-image-type QCOW2"
+          }
+          {
+            step: 4
+            action: "would-run"
+            command: "poll oci compute image get"
+            description: "Poll image import status until AVAILABLE (max 40 × 30s = 20 min)"
+            args: { wait_for_state: "AVAILABLE", poll_interval_sec: 30, max_polls: 40 }
+            would_run: "oci compute image get --image-id <image-id>"
+          }
+          {
+            step: 5
+            action: "would-run"
+            command: "oci compute instance launch"
+            description: "Launch instance from imported image"
+            args: {
+              compartment_id: $compartment_id
+              image_id: "<image-id-from-step-3>"
+              shape: $shape
+              subnet_id: $subnet_id
+              display_name: $image_name
+            }
+            would_run: $"oci compute instance launch --compartment-id ($compartment_id) --image-id <image-id> --shape ($shape) --subnet-id ($subnet_id) --display-name ($image_name)"
+          }
+        ]
+        notes: [
+          "Requires oci-cli installed and ~/.oci/config configured"
+          "oci-cli is UPL-1.0 (invoked as subprocess only)"
+          "Object Storage bucket must exist and be writable"
+          "deploy.oci_namespace, deploy.oci_compartment_id, and deploy.oci_subnet_id are required"
+          "VCN and subnet must be configured before instance launch"
+        ]
+      }
     }
   }
 
-  let image_sha256 = if ($nu.os-info.name == "macos") {
-    (^shasum -a 256 $image_path | str trim | split column " " | get column1.0)
-  } else {
-    (^sha256sum $image_path | str trim | split column " " | get column1.0)
+  # ── Live execution path ────────────────────────────────────────────────────
+
+  if $oci_cli == null {
+    return {action: "failed", reason: "oci CLI not found — install: pip3 install oci-cli", provider: "oci"}
+  }
+  if not ($oci_config | path exists) {
+    return {action: "failed", reason: $"OCI config not found at ($oci_config) — run: oci setup config", provider: "oci"}
   }
 
-  let oci_version = if ($oci_cli != null) {
-    try {
-      ^$oci_cli --version | str trim
+  # ── Step 1 — convert to qcow2 if needed ───────────────────────────────────
+  let qcow2_path = if ($image_path | str ends-with ".qcow2") {
+    $image_path
+  } else {
+    let out = ($image_path | str replace --regex '\.[^.]+$' '.qcow2')
+    let conv = convert_to_qcow2 $image_path $out false
+    if $conv.action == "failed" or $conv.action == "stub" {
+      return {action: "failed", step: "convert_to_qcow2", detail: $conv}
+    }
+    $out
+  }
+
+  # ── Step 2 — upload to Object Storage ─────────────────────────────────────
+  let namespace = $manifest.deploy?.oci_namespace? | default ""
+  if $namespace == "" {
+    return {action: "failed", reason: "deploy.oci_namespace required for OCI BYOI", provider: "oci"}
+  }
+  let bucket = $manifest.deploy?.oci_bucket? | default "genoa-images"
+  let object_name = ($qcow2_path | path basename)
+
+  let upload_result = try {
+    ^$oci_cli os object put --namespace $namespace --bucket-name $bucket --file $qcow2_path --name $object_name | from json
+  } catch { |e| return {action: "failed", step: "upload_image", error: $e.msg} }
+
+  # ── Step 3 — import as Custom Image ───────────────────────────────────────
+  let compartment_id = $manifest.deploy?.oci_compartment_id? | default ""
+  if $compartment_id == "" {
+    return {action: "failed", reason: "deploy.oci_compartment_id required for OCI image import", provider: "oci"}
+  }
+  let image_name = $manifest.image?.name? | default "genoa-freebsd"
+
+  let import_result = try {
+    ^$oci_cli compute image import from-object --namespace $namespace --bucket-name $bucket --name $object_name --compartment-id $compartment_id --display-name $image_name --source-image-type QCOW2 | from json
+  } catch { |e| return {action: "failed", step: "import_image", error: $e.msg} }
+
+  let image_id = $import_result.data?.id? | default null
+  if $image_id == null {
+    return {action: "failed", step: "import_image", detail: $import_result}
+  }
+
+  # ── Step 4 — poll until import complete (max 40 × 30s = 20 min) ───────────
+  mut img_state = "IMPORTING"
+  mut poll = 0
+  while $img_state != "AVAILABLE" and $poll < 40 {
+    ^sleep 30sec
+    let img = try {
+      ^$oci_cli compute image get --image-id $image_id | from json
     } catch {
-      "unknown"
+      {data: {"lifecycle-state": "UNKNOWN"}}
     }
-  } else {
-    "not installed"
+    $img_state = $img.data?."lifecycle-state"? | default "UNKNOWN"
+    $poll = $poll + 1
+    if $img_state == "DELETED" or $img_state == "FAILED" {
+      return {action: "failed", step: "poll_import", image_id: $image_id, state: $img_state}
+    }
+  }
+  if $img_state != "AVAILABLE" {
+    return {action: "failed", step: "poll_import", reason: "timed_out", image_id: $image_id}
   }
 
-  # Step 1: Convert raw to qcow2
-  let qcow2_path = ($image_path | path dirname) + "/" + (($image_path | path basename) | str replace ".raw" "") + ".qcow2"
+  # ── Step 5 — launch instance ───────────────────────────────────────────────
+  let subnet_id = $manifest.deploy?.oci_subnet_id? | default ""
+  if $subnet_id == "" {
+    return {action: "failed", reason: "deploy.oci_subnet_id required", provider: "oci"}
+  }
+  let shape = $manifest.deploy?.oci_shape? | default "VM.Standard.A1.Flex"
 
-  # Build the deployment plan
-  let steps = [
-    {
-      step: 1
-      action: "would-run"
-      command: "qemu-img convert"
-      description: "Convert raw image to qcow2 format"
-      args: {
-        format_in: "raw"
-        format_out: "qcow2"
-        compression: true
-        input: $image_path
-        output: $qcow2_path
-      }
-      notes: [
-        "qemu-img is GPL-2 — invoked as external subprocess only"
-        "Compression reduces upload size (important for OCI)"
-      ]
-      would_run: "qemu-img convert -O qcow2 -c image.raw image.qcow2"
-    }
-    {
-      step: 2
-      action: "would-run"
-      command: "oci os object put"
-      description: "Upload qcow2 to OCI Object Storage"
-      args: {
-        bucket_name: $bucket_name
-        file: $qcow2_path
-        object_name: $"($image_name).qcow2"
-      }
-      notes: [
-        "Requires OCI_CLI_AUTH=api_key or environment auth configured"
-        "Object Storage must be in same tenancy as compute compartment"
-      ]
-      would_run: $"oci os object put --bucket-name ($bucket_name) --file ($qcow2_path) --object-name ($image_name).qcow2"
-    }
-    {
-      step: 3
-      action: "would-run"
-      command: "oci compute image import from-object"
-      description: "Import qcow2 as custom OCI compute image"
-      args: {
-        compartment_id: $compartment_id
-        bucket_name: $bucket_name
-        object_name: $"($image_name).qcow2"
-        display_name: $"($image_name)-20260430"
-        operating_system: "FreeBSD"
-        operating_system_version: $os_version
-      }
-      notes: [
-        "Operating system must be set to FreeBSD"
-        "launch_mode can be PARAVIRTUALIZED or EMULATED"
-      ]
-      would_run: $"oci compute image import from-object --compartment-id ($compartment_id) --bucket-name ($bucket_name) --object-name ($image_name).qcow2 --display-name ($image_name) --operating-system FreeBSD --operating-system-version ($os_version)"
-    }
-    {
-      step: 4
-      action: "would-run"
-      command: "polling"
-      description: "Poll image import status until AVAILABLE"
-      args: {
-        poll_command: "oci compute image get --image-id <image-id>"
-        wait_for_state: "AVAILABLE"
-      }
-      notes: [
-        "Import time typically 10-30 minutes depending on image size"
-        "Poll interval: 30-60 seconds"
-        "Max wait: 2 hours"
-      ]
-      would_run: "oci compute image get --image-id <image-id> --query 'data.{lifecycle_state:\"lifecycle-state\",size:\"size-in-mbs\"}'"
-    }
-    {
-      step: 5
-      action: "would-run"
-      command: "oci compute instance launch"
-      description: "Launch instance from imported image"
-      args: {
-        image_id: "<image-id-from-step-3>"
-        shape: "VM.Standard.A1.Flex"
-        compartment_id: $compartment_id
-        display_name: $"($image_name)-instance"
-      }
-      notes: [
-        "Shape options: VM.Standard.A1.Flex, VM.Standard.E5.Flex, etc."
-        "Ensure VCN and subnet are configured"
-        "SSH key required for access"
-      ]
-      would_run: $"oci compute instance launch --image-id <image-id> --shape VM.Standard.A1.Flex --compartment-id ($compartment_id) --display-name ($image_name)-instance --subnet-id <subnet-id> --ssh-authorized-keys-file ~/.ssh/id_rsa.pub"
-    }
-  ]
+  let launch_result = try {
+    ^$oci_cli compute instance launch --compartment-id $compartment_id --image-id $image_id --shape $shape --subnet-id $subnet_id --display-name $image_name | from json
+  } catch { |e| return {action: "failed", step: "launch_instance", error: $e.msg} }
 
-  return {
+  # ── Success ────────────────────────────────────────────────────────────────
+  {
+    action: "deployed"
     provider: "oci"
-    path: "Path 0: BYOI (qcow2 via Object Storage)"
-    manifest: $manifest
-    image_name: $image_name
-    image_path: $image_path
-    image_sha256: $image_sha256
-    image_size_bytes: (ls $image_path | get 0.size)
+    image_id: $image_id
+    instance_id: ($launch_result.data?.id? | default "unknown")
+    instance_state: ($launch_result.data?."lifecycle-state"? | default "PROVISIONING")
+    shape: $shape
+    compartment_id: $compartment_id
     qcow2_path: $qcow2_path
-    oci_cli_version: $oci_version
-    plan: {
-      steps: $steps
-      notes: [
-        "Requires oci-cli installed and OCI_CLI_AUTH configured"
-        "oci-cli is UPL-1.0 (licensed, invoked as subprocess only)"
-        "Object Storage bucket must exist and be writable"
-        "Compartment ID must be the target compute compartment"
-        "VCN and subnet must be configured before instance launch"
-      ]
-    }
   }
 }

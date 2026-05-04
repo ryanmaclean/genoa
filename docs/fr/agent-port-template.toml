@@ -1,0 +1,331 @@
+# genoa manifest — gabarit de portage d'agent
+# Schéma : v1  |  Schéma complet : schema/manifest.v1.json
+# Valider : nu genoa.nu validate examples/agent-port-template.toml
+# Construire :    nu genoa.nu build   examples/agent-port-template.toml
+# Déployer :   nu genoa.nu deploy  examples/agent-port-template.toml
+
+# Obligatoire. Doit être exactement "v1". Incrémenter à v2 lors de changements de schéma incompatibles.
+schema_version = "v1"
+
+# ---------------------------------------------------------------------------
+# [image] — Identité et configuration de la sortie
+# Les quatre champs (name, version, format, size_mb) sont obligatoires.
+# ---------------------------------------------------------------------------
+[image]
+
+# Identifiant court utilisé comme base du nom de fichier de sortie. Motif : ^[a-z0-9][a-z0-9_-]*$
+# La sortie sera : out/<name>-<version>.<format>
+# Remplacer "my-agent" par l'identifiant canonique de votre agent.
+name = "my-agent-freebsd-amd64"
+
+# Étiquette SemVer pour ce build d'image. Motif : ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$
+# Maintenir en synchronisation avec [agent].version. Un écart est valide mais prête à confusion.
+version = "v0.1.0"
+
+# Format de l'image de sortie.
+#   qcow2 — privilégié pour QEMU ; creux (artefact << size_mb sur disque)
+#   raw   — requis par certains fournisseurs (Linode, Hetzner) ; non creux
+#   vmdk  — pour les cibles compatibles VMware
+# Le téléversement d'ISO personnalisée sur Vultr n'accepte que "iso" — voir freebsd-vultr-aarch64.toml.
+# La plupart des adaptateurs de fournisseurs attendent qcow2 ou raw ; consulter catalog/providers.v1.json.
+format = "raw"
+
+# Taille provisionnée de l'image en Mio. Plage : 512–65536.
+# qcow2 : le disque apparaît de cette taille dans la VM ; l'artefact est beaucoup plus petit.
+# raw :   l'artefact fait exactement cette taille sur disque.
+# 2048 Mio (2 Gio) suffit pour la base + un binaire lié statiquement.
+# Ajouter 512–1024 Mio si votre agent possède de grands fichiers de configuration ou des modèles embarqués.
+size_mb = 2048
+
+# Répertoire où l'image finale et l'attestation de build sont écrits.
+# Par défaut : ./out  — à remplacer si votre pipeline CI attend un chemin spécifique.
+output_dir = "./out"
+
+# Description lisible par les humains. Portée dans l'attestation de build et le catalog.
+description = "Minimal FreeBSD image shipping my-agent v0.1.0 (amd64, Vultr)"
+
+# ---------------------------------------------------------------------------
+# [target] — Système d'exploitation, architecture et profil d'hyperviseur
+# Les quatre champs (os, os_version, arch, platform) sont obligatoires.
+# ---------------------------------------------------------------------------
+[target]
+
+# Système d'exploitation cible. L'un de : freebsd | netbsd
+os = "freebsd"
+
+# Chaîne de version de l'OS. Motif : ^[0-9]+\.[0-9]+(\.[0-9]+)?(-RELEASE|-STABLE|-CURRENT|-SNAPSHOT)?$
+# Utiliser les builds RELEASE en production ; CURRENT uniquement pour le développement noyau.
+os_version = "15.0-RELEASE"
+
+# Architecture CPU. L'une de : amd64 | aarch64 | riscv64
+# amd64 :   Vultr, Linode, DigitalOcean, la plupart des fournisseurs x86
+# aarch64 : OCI Ampere A1 niveau gratuit, Scaleway, nœuds Mythic Beasts Pi
+#   (Vultr ne propose pas de calcul aarch64 au 2026-04 — voir providers.v1.json)
+arch = "amd64"
+
+# Plateforme matérielle/hyperviseur cible. Détermine la sélection de configuration du noyau.
+#   generic — VM cloud (pilotes virtio, sans hypothèse SoC embarquée) ; à utiliser pour Vultr/Linode/OCI
+#   qemu    — boucle de développement QEMU local ; active virtio-net, virtio-blk explicitement
+#   rpi4    — Raspberry Pi 4 (requiert aarch64)
+#   rpi5    — Raspberry Pi 5 (requiert aarch64)
+platform = "generic"
+
+# Facultatif : destination SSH pour un hôte de build FreeBSD distant.
+# Omettre ce champ pour construire localement (nécessite un hôte ou une jail FreeBSD).
+# genoa se connectera en SSH, exécutera le build et rapatriera l'artefact.
+# Format : user@host:port  — le port 2225 est la convention smolBSD.
+# build_host = "builder@fb-vm-24:2225"
+
+# ---------------------------------------------------------------------------
+# [kernel] — Configuration du noyau et options
+# Seul [kernel].config est obligatoire.
+# ---------------------------------------------------------------------------
+[kernel]
+
+# Nom de configuration du noyau. Intégrés : SMOLBSD | GENERIC | MINIMAL | RPI
+# SMOLBSD : configuration allégée maintenue par ce projet ; empreinte minimale
+# GENERIC : configuration FreeBSD amont par défaut ; support matériel le plus large ; binaire plus lourd
+# MINIMAL : configuration amont au strict minimum ; peut nécessiter extra_options pour ajouter des pilotes
+# Personnalisée : fournir un kernel_delta_file et définir config sur le nom CONFIG de ce fichier
+config = "SMOLBSD"
+
+# Facultatif : chemin vers un fichier delta de configuration noyau, relatif à ce manifest.
+# Le delta est appliqué par-dessus [kernel].config avant la construction.
+# kernel_delta_file = "kernel/my-agent-delta"
+
+# Lignes nodevice/nooptions/options supplémentaires injectées dans la configuration du noyau.
+# Utile pour supprimer des pilotes qui gaspillent de l'espace image lorsque le matériel est connu.
+# Motif pour chaque entrée : ^(no)?(device|options|makeoptions)\s+\S.*$
+#
+# Exemple : supprimer entièrement la pile USB (économise ~800 Kio) pour une VM cloud sans écran
+#   "nodevice usb"       — supprime le pilote de bus USB
+#   "nodevice uhci"      — supprime le contrôleur hôte UHCI (PCI USB 1.x)
+#   "nodevice xhci"      — supprime le contrôleur hôte xHCI (USB 3.x)
+#
+# Exemple : désactiver SCTP si votre agent n'en a pas besoin
+#   "nooptions SCTP"
+extra_options = [
+  "nodevice usb",
+  "nodevice uhci",
+  "nodevice xhci",
+  "nooptions SCTP",
+]
+
+# Supprimer les symboles de débogage du binaire du noyau. Réduit la taille du binaire de ~50 %.
+# Mettre à false uniquement lors de la construction d'un noyau destiné à être débogué avec kgdb.
+strip_debug = true
+
+# ---------------------------------------------------------------------------
+# [packages] — Ensemble de paquets pkgbase intégré dans l'image
+# ---------------------------------------------------------------------------
+[packages]
+
+# Paquets à inclure. Ce sont des noms de composants pkgbase FreeBSD.
+# Les valeurs par défaut ci-dessous constituent l'ensemble minimal pour un système fonctionnel capable de :
+#   - exécuter des services rc.d (FreeBSD-rc)
+#   - se lier à libc (FreeBSD-clibs, FreeBSD-runtime)
+#   - résoudre le DNS et récupérer des URL (FreeBSD-utilities inclut libc, fetch(1))
+#   - amorcer pkg(8) pour les installations post-démarrage (FreeBSD-pkg-bootstrap)
+#   - vérifier TLS (FreeBSD-openssl-lib)
+# Ajouter des paquets ici si votre agent nécessite des scripts shell, Python, jq, etc.
+# Exemple : ajouter "FreeBSD-sh" pour /bin/sh, "FreeBSD-libarchive" pour tar(1)
+include = [
+  "FreeBSD-runtime",      # libc, libpthread, libm — essentiel
+  "FreeBSD-clibs",        # bibliothèques C d'exécution
+  "FreeBSD-rc",           # framework /etc/rc.d ; requis pour rc_service
+  "FreeBSD-utilities",    # équivalent coreutils : ls, cp, mv, etc.
+  "FreeBSD-pkg-bootstrap", # amorçage pkg(8) pour les installations post-démarrage
+  "FreeBSD-libarchive",   # libarchive (tar, cpio) — utilisé par de nombreux agents
+  "FreeBSD-openssl-lib",  # support client TLS ; requis pour les téléchargements HTTPS
+  "FreeBSD-fetch",        # fetch(1) pour les téléchargements dans l'image
+]
+
+# Motifs glob exclus via vm_extra_filter_base_packages().
+# Appliqués après include ; les exclusions l'emportent sur les inclusions.
+# Les motifs par défaut suppriment les outils de débogage, les bibliothèques compat 32 bits et les sources
+# qui ajoutent des centaines de Mio sans valeur d'exécution pour une image d'agent déployé.
+exclude_patterns = [
+  "*-dbg",          # paquets de débogage (symboles DWARF)
+  "*-lib32",        # bibliothèques de compatibilité 32 bits (inutiles dans un agent 64 bits)
+  "FreeBSD-tests*", # suites de tests ; gaspillage à l'exécution
+  "FreeBSD-lldb*",  # débogueur ; inutile en image de production
+  "FreeBSD-devel*", # en-têtes de développement ; le binaire agent est pré-compilé
+  "FreeBSD-src*",   # sources noyau/espace utilisateur ; volumineux, inutile à l'exécution
+]
+
+# URL du dépôt pkg(8) pour les paquets tiers.
+# Remplacer :amd64 par :aarch64 lors de la construction pour des cibles aarch64.
+# "quarterly" est stable ; "latest" suit les versions pkg de façon plus agressive.
+pkg_repo = "https://pkg.freebsd.org/FreeBSD:15:amd64/quarterly"
+
+# ---------------------------------------------------------------------------
+# [agent] — La charge utile binaire intégrée dans l'image
+# Obligatoires : name, version, source
+# ---------------------------------------------------------------------------
+[agent]
+
+# Identifiant de l'agent. Minuscules, sans espaces. Utilisé dans le nommage rc.d et les attestations de build.
+# Exemples : "ii-agent", "conclave", "irclaw-v2", "my-agent"
+name = "my-agent"
+
+# Version SemVer du binaire agent. Idéalement identique à [image].version.
+# Motif : ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$
+version = "v0.1.0"
+
+# ---------------------------------------------------------------------------
+# [agent.source] — Où récupérer le binaire agent
+#
+# Trois stratégies sont disponibles. Décommenter exactement UN bloc.
+# ---------------------------------------------------------------------------
+
+# --- Stratégie A : url (téléchargement HTTPS direct) --------------------------------
+# Utiliser quand : votre binaire est hébergé sur un point de terminaison HTTPS public (releases GitHub,
+# votre propre CDN, URL présignée S3, etc.).
+# Champs obligatoires : type, url, sha256
+# Le sha256 DOIT correspondre au fichier téléchargé, sinon le build est interrompu.
+# Un sha256 tout à zéro déclenche un AVERTISSEMENT de validation — à remplacer avant la production.
+[agent.source]
+type = "url"
+url = "https://releases.example.com/my-agent/v0.1.0/my-agent-freebsd-amd64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+# Calculer le sha256 réel : sha256sum ./my-agent-freebsd-amd64 | awk '{print $1}'
+# ou sur macOS/FreeBSD :     shasum -a 256 ./my-agent-freebsd-amd64
+
+# --- Stratégie B : gitea_release (Gitea local au parc) -------------------------
+# Utiliser quand : votre binaire est un asset de release sur l'instance Gitea du parc.
+# C'est le chemin le plus courant pour les agents développés en interne dans ce parc.
+# Champs obligatoires : type, repo, tag, asset, sha256
+# gitea.local pointe vers le Gitea QNAS sur le port 3000 du réseau local du parc.
+#
+# [agent.source]
+# type    = "gitea_release"
+# repo    = "my-team/my-agent"                          # owner/repo sur gitea.local
+# tag     = "v0.1.0-freebsd-amd64"                      # étiquette de release
+# asset   = "my-agent-freebsd-amd64"                    # nom de fichier dans la release
+# sha256  = "0000000000000000000000000000000000000000000000000000000000000000"
+# # genoa résout : http://gitea.local:3000/my-team/my-agent/releases/download/v0.1.0-freebsd-amd64/my-agent-freebsd-amd64
+
+# --- Stratégie C : local_path (artefact de build local) ---------------------------
+# Utiliser quand : itération locale ; le binaire réside sur le système de fichiers de l'hôte de build.
+# sha256 n'est PAS requis pour local_path (pas de récupération distante à vérifier).
+# Passer à url ou gitea_release avant de livrer une image de production.
+#
+# [agent.source]
+# type = "local_path"
+# path = "/home/builder/my-agent/target/x86_64-unknown-freebsd/release/my-agent"
+
+# Chemin absolu à l'intérieur de l'image où le binaire est installé.
+# Par défaut : /usr/local/bin — dans le PATH pour rc.d et les shells interactifs.
+# Ne modifier que si votre agent suit une convention d'installation non standard.
+install_path = "/usr/local/bin"
+
+# ---------------------------------------------------------------------------
+# [agent.rc_service] — Service rc.d pour démarrer l'agent au boot
+# Omettre cette section entière pour ignorer l'intégration rc.d (démarrage manuel uniquement).
+# ---------------------------------------------------------------------------
+[agent.rc_service]
+
+# Activer ou non le service au démarrage via rc.conf.
+# false = le service est installé mais non activé ; utile pour les déploiements progressifs.
+enabled = true
+
+# Nom du service rc.d. Convention : tirets bas, pas de tirets (règle de nommage rc.d).
+# genoa génère /usr/local/etc/rc.d/<name> et ajoute <name>_enable="YES"
+# dans /etc/rc.conf.
+name = "my_agent"
+
+# Arguments passés tels quels au binaire agent lors du démarrage par rc.d.
+# L'invocation complète sera : /usr/local/bin/my-agent <command_args>
+# Motifs courants :
+#   --listen 0.0.0.0:8080          écoute sur toutes les interfaces sur le port 8080
+#   --config /etc/agent/config.json  pointe vers un fichier de configuration intégré
+#   --log-level info                 verbosité des journaux structurés
+#   --data-dir /var/db/my-agent     répertoire d'état persistant
+command_args = "--listen 0.0.0.0:8080 --config /etc/agent/config.json --log-level info"
+
+# ---------------------------------------------------------------------------
+# [agent.config] — Configuration clé/valeur intégrée dans l'image
+# Les clés deviennent des variables d'environnement ou des entrées dans /etc/agent/config (selon
+# le gabarit rc.d de genoa). Toutes les valeurs doivent être des chaînes.
+# Omettre cette section si votre agent est entièrement configuré via command_args.
+# ---------------------------------------------------------------------------
+[agent.config]
+LOG_LEVEL    = "info"                          # verbosité des journaux
+API_ENDPOINT = "https://api.example.com/v1"   # API amont que l'agent appelle
+LISTEN_ADDR  = "0.0.0.0:8080"                 # redondant avec command_args ici, montré à titre illustratif
+DATA_DIR     = "/var/db/my-agent"             # répertoire d'état accessible en écriture dans la VM
+FLEET_ID     = "prod-iad-01"                  # identité logique du parc ; à remplacer par région
+TLS_SKIP_VERIFY = "false"                     # ne jamais mettre à true en production
+
+# ---------------------------------------------------------------------------
+# [network] — Configuration réseau rc.conf intégrée dans l'image
+# Omettre pour accepter les valeurs par défaut de genoa (dhcp sur vtnet0, hostname smolbsd).
+# ---------------------------------------------------------------------------
+[network]
+
+# Interface réseau principale dans la VM.
+# vtnet0 — NIC VirtIO ; correct pour QEMU, KVM, Vultr, Linode, OCI
+# ue0    — Ethernet USB (cartes RPi via dongle USB)
+# genet0 — Broadcom GENET (NIC intégré Raspberry Pi 4/5)
+interface = "vtnet0"
+
+# Mode réseau. L'un de : dhcp | static
+# dhcp   — correct pour les fournisseurs cloud ; IP assignée par le DHCP de l'hyperviseur
+# static — à utiliser quand une IP fixe est nécessaire, p. ex. bare-metal ou lab macvlan
+mode = "dhcp"
+
+# Configuration IP statique — pertinent uniquement quand mode = "static".
+# Décommenter et remplir lors du passage en statique :
+# mode       = "static"
+# static_ip  = "10.0.3.50/23"   # notation CIDR ; /23 = sous-réseau de parc de 512 hôtes
+# gateway    = "10.0.3.1"
+
+# Nom d'hôte attribué dans /etc/rc.conf et /etc/hosts.
+# Pour les déploiements en parc, utiliser un nom incluant le rôle de l'agent et la région.
+hostname = "my-agent-01"
+
+# ---------------------------------------------------------------------------
+# Profil de boot
+# uefi  — boot UEFI ; correct pour tous les fournisseurs cloud et le matériel moderne
+# kboot — kboot (chargeur de boot FreeBSD via Linux kexec) ; expérimental
+# ---------------------------------------------------------------------------
+profile = "uefi"
+
+# ---------------------------------------------------------------------------
+# [deploy] — Répartition vers le fournisseur cloud
+# genoa recherche le fournisseur dans catalog/providers.v1.json pour trouver le
+# deployment_path (p. ex. "snapshot-url", "byoi-api").
+# ---------------------------------------------------------------------------
+[deploy]
+
+# Identifiant de fournisseur issu de catalog/providers.v1.json.
+# "vultr" — deployment_path : snapshot-url ; meilleure expérience FreeBSD milieu de gamme
+# Autres identifiants validés : "oci", "linode_akamai", "digitalocean", "ovhcloud_public"
+# Vérifier catalog/providers.v1.json pour byoi_format avant de choisir le format ci-dessus.
+provider = "vultr"
+
+# Remplacement facultatif du deployment_path du catalog.
+# N'utiliser que si l'entrée du catalog est périmée ou que votre compte dispose d'un accès spécial.
+# path_override = "byoi-api"
+
+# ---------------------------------------------------------------------------
+# [signing] — Signature d'image avec signify(1)
+# Omettre cette section pour produire une image non signée.
+# ---------------------------------------------------------------------------
+# [signing]
+# tool           = "signify"          # "signify" | "none"
+# key_file       = "~/.keys/genoa.sec"  # clé privée — NE JAMAIS committer
+# public_key_file = "keys/genoa.pub"   # clé publique — peut être commitée sans risque
+
+# ---------------------------------------------------------------------------
+# [metadata] — Paires clé/valeur arbitraires de chaînes portées dans l'attestation de build
+# Utile pour la traçabilité CI, le ciblage régional et les pistes d'audit.
+# Toutes les valeurs doivent être des chaînes.
+# ---------------------------------------------------------------------------
+[metadata]
+maintainer    = "agent-team@example.com"         # contact de l'équipe
+repo          = "gitea.local/my-team/my-agent"   # dépôt source
+ci_pipeline   = "gitea-runner-01"                # quel exécuteur CI a produit ceci
+target_region = "ewr"                            # identifiant de région Vultr (Newark)
+builder_notes = "amd64 production image, Vultr custom ISO upload"
+schema_docs   = "https://github.com/ryanmaclean/genoa/schema/manifest.v1.json"

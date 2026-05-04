@@ -1,0 +1,331 @@
+# genoa マニフェスト — エージェントポートテンプレート
+# スキーマ : v1  |  完全なスキーマ : schema/manifest.v1.json
+# 検証 : nu genoa.nu validate examples/agent-port-template.toml
+# ビルド :    nu genoa.nu build   examples/agent-port-template.toml
+# デプロイ :   nu genoa.nu deploy  examples/agent-port-template.toml
+
+# 必須です。正確に "v1" でなければなりません。スキーマに破壊的変更があった場合は v2 に上げてください。
+schema_version = "v1"
+
+# ---------------------------------------------------------------------------
+# [image] — イメージの識別と出力設定
+# 4 つのフィールド（name, version, format, size_mb）はすべて必須です。
+# ---------------------------------------------------------------------------
+[image]
+
+# 出力ファイル名のベースとして使われるスラグです。パターン : ^[a-z0-9][a-z0-9_-]*$
+# 出力先 : out/<name>-<version>.<format>
+# "my-agent" をご自身のエージェントの正規スラグに置き換えてください。
+name = "my-agent-freebsd-amd64"
+
+# このイメージビルドの SemVer タグです。パターン : ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$
+# [agent].version と同期を保ってください。不一致は有効ですが混乱の原因になります。
+version = "v0.1.0"
+
+# 出力イメージのフォーマットです。
+#   qcow2 — QEMU 向け推奨；スパース形式（アーティファクトはディスク上の size_mb より小さい）
+#   raw   — 一部のプロバイダー（Linode、Hetzner）で必須；スパースではない
+#   vmdk  — VMware 互換ターゲット向け
+# Vultr のカスタム ISO アップロードは "iso" のみ受け付けます — freebsd-vultr-aarch64.toml を参照。
+# 多くのプロバイダーアダプターは qcow2 または raw を期待します；catalog/providers.v1.json を確認してください。
+format = "raw"
+
+# イメージのプロビジョニングサイズ（MiB 単位）。範囲 : 512–65536。
+# qcow2 : VM 内部ではこのサイズのディスクに見えます；アーティファクトは実際にははるかに小さいです。
+# raw :   アーティファクトはディスク上でちょうどこのサイズになります。
+# 2048 MiB（2 GiB）はベース + 静的リンク済みバイナリ 1 つには十分です。
+# エージェントに大きな設定ファイルや埋め込みモデルがある場合は 512–1024 MiB を追加してください。
+size_mb = 2048
+
+# 完成したイメージとビルドレシートが書き込まれるディレクトリです。
+# デフォルト : ./out  — CI パイプラインが特定のパスを期待する場合は上書きしてください。
+output_dir = "./out"
+
+# 人が読める説明文です。ビルドレシートとカタログに引き継がれます。
+description = "Minimal FreeBSD image shipping my-agent v0.1.0 (amd64, Vultr)"
+
+# ---------------------------------------------------------------------------
+# [target] — OS、アーキテクチャ、ハイパーバイザープロファイル
+# 4 つのフィールド（os, os_version, arch, platform）はすべて必須です。
+# ---------------------------------------------------------------------------
+[target]
+
+# ターゲットのオペレーティングシステムです。freebsd | netbsd のいずれか。
+os = "freebsd"
+
+# OS のリリース文字列です。パターン : ^[0-9]+\.[0-9]+(\.[0-9]+)?(-RELEASE|-STABLE|-CURRENT|-SNAPSHOT)?$
+# 本番環境には RELEASE ビルドを使用してください；CURRENT はカーネル開発専用です。
+os_version = "15.0-RELEASE"
+
+# CPU アーキテクチャです。amd64 | aarch64 | riscv64 のいずれか。
+# amd64 :   Vultr、Linode、DigitalOcean、ほとんどの x86 プロバイダー
+# aarch64 : OCI Ampere A1 無料枠、Scaleway、Mythic Beasts Pi ノード
+#   （Vultr は 2026-04 時点で aarch64 コンピュートを提供していません — providers.v1.json を参照）
+arch = "amd64"
+
+# ターゲットのハードウェア/ハイパーバイタープラットフォームです。カーネル設定の選択を決定します。
+#   generic — クラウド VM（virtio ドライバー、SoC 固有の前提なし）；Vultr/Linode/OCI に使用
+#   qemu    — ローカル QEMU 開発ループ；virtio-net と virtio-blk を明示的に有効化
+#   rpi4    — Raspberry Pi 4（aarch64 が必要）
+#   rpi5    — Raspberry Pi 5（aarch64 が必要）
+platform = "generic"
+
+# オプション : リモートの FreeBSD ビルドホストへの SSH 接続先です。
+# ローカルでビルドする場合はこのフィールドを省略してください（FreeBSD ホストまたは jail が必要）。
+# genoa が SSH で接続し、ビルドを実行して、アーティファクトを取得します。
+# フォーマット : user@host:port  — ポート 2225 は smolBSD の慣例です。
+# build_host = "builder@fb-vm-24:2225"
+
+# ---------------------------------------------------------------------------
+# [kernel] — カーネル設定とオプション
+# [kernel].config のみ必須です。
+# ---------------------------------------------------------------------------
+[kernel]
+
+# カーネル設定名です。組み込み : SMOLBSD | GENERIC | MINIMAL | RPI
+# SMOLBSD : このプロジェクトが管理する軽量設定；最小フットプリント
+# GENERIC : FreeBSD アップストリームのデフォルト；最も広いハードウェアサポート；バイナリは大きい
+# MINIMAL : アップストリームの最小設定；ドライバーを追加するために extra_options が必要な場合あり
+# カスタム : kernel_delta_file を指定し、そのファイルの CONFIG 名を config に設定する
+config = "SMOLBSD"
+
+# オプション : カーネル設定のデルタファイルへのパスです（このマニフェストからの相対パス）。
+# デルタはビルド前に [kernel].config の上に適用されます。
+# kernel_delta_file = "kernel/my-agent-delta"
+
+# カーネル設定に注入する追加の nodevice/nooptions/options 行です。
+# ハードウェアが分かっている場合に、イメージ容量を無駄にするドライバーを除去するのに役立ちます。
+# 各エントリーのパターン : ^(no)?(device|options|makeoptions)\s+\S.*$
+#
+# 例 : ヘッドレスクラウド VM 向けに USB スタックを完全に除去する（~800 KiB の節約）
+#   "nodevice usb"       — USB バスドライバーを削除
+#   "nodevice uhci"      — UHCI ホストコントローラーを削除（PCI USB 1.x）
+#   "nodevice xhci"      — xHCI ホストコントローラーを削除（USB 3.x）
+#
+# 例 : エージェントが不要な場合に SCTP を無効化する
+#   "nooptions SCTP"
+extra_options = [
+  "nodevice usb",
+  "nodevice uhci",
+  "nodevice xhci",
+  "nooptions SCTP",
+]
+
+# カーネルバイナリからデバッグシンボルを除去します。バイナリサイズを約 50% 削減します。
+# kgdb でデバッグするカーネルをビルドする場合のみ false に設定してください。
+strip_debug = true
+
+# ---------------------------------------------------------------------------
+# [packages] — イメージに組み込まれる pkgbase パッケージセット
+# ---------------------------------------------------------------------------
+[packages]
+
+# 含めるパッケージです。FreeBSD pkgbase コンポーネント名を指定します。
+# 以下のデフォルトは、次のことができる動作するシステムの最小セットです：
+#   - rc.d サービスを実行する（FreeBSD-rc）
+#   - libc にリンクする（FreeBSD-clibs、FreeBSD-runtime）
+#   - DNS を解決して URL を取得する（FreeBSD-utilities には libc と fetch(1) を含む）
+#   - ブート後インストール用に pkg(8) をブートストラップする（FreeBSD-pkg-bootstrap）
+#   - TLS を検証する（FreeBSD-openssl-lib）
+# エージェントにシェルスクリプト、Python、jq などが必要な場合はここにパッケージを追加してください。
+# 例 : /bin/sh 用に "FreeBSD-sh"、tar(1) 用に "FreeBSD-libarchive" を追加する
+include = [
+  "FreeBSD-runtime",      # libc, libpthread, libm — 必須
+  "FreeBSD-clibs",        # ランタイム C ライブラリ
+  "FreeBSD-rc",           # /etc/rc.d フレームワーク；rc_service に必要
+  "FreeBSD-utilities",    # coreutils 相当 : ls, cp, mv など
+  "FreeBSD-pkg-bootstrap", # ブート後インストール用 pkg(8) ブートストラップ
+  "FreeBSD-libarchive",   # libarchive（tar、cpio）— 多くのエージェントが使用
+  "FreeBSD-openssl-lib",  # TLS クライアントサポート；HTTPS フェッチに必要
+  "FreeBSD-fetch",        # イメージ内ダウンロード用 fetch(1)
+]
+
+# vm_extra_filter_base_packages() で除外されるグロブパターンです。
+# include の後に適用され、除外が包含より優先されます。
+# デフォルトのパターンは、デプロイ済みエージェントイメージのランタイム価値のない
+# デバッグツール、32 ビット互換ライブラリ、ソースを除去します（数百 MiB の削減）。
+exclude_patterns = [
+  "*-dbg",          # デバッグパッケージ（DWARF シンボル）
+  "*-lib32",        # 32 ビット互換ライブラリ（64 ビットエージェントには不要）
+  "FreeBSD-tests*", # テストスイート；ランタイムの無駄
+  "FreeBSD-lldb*",  # デバッガー；本番イメージには不要
+  "FreeBSD-devel*", # 開発ヘッダー；エージェントバイナリは事前コンパイル済み
+  "FreeBSD-src*",   # カーネル/ユーザーランドのソース；大きく、ランタイムには不要
+]
+
+# サードパーティパッケージ用 pkg(8) リポジトリ URL です。
+# aarch64 ターゲット向けにビルドする場合は :amd64 を :aarch64 に変更してください。
+# "quarterly" は安定版；"latest" は pkg リリースをより積極的に追跡します。
+pkg_repo = "https://pkg.freebsd.org/FreeBSD:15:amd64/quarterly"
+
+# ---------------------------------------------------------------------------
+# [agent] — イメージに組み込まれるバイナリペイロード
+# 必須 : name, version, source
+# ---------------------------------------------------------------------------
+[agent]
+
+# エージェントの識別子です。小文字、スペースなし。rc.d の命名とビルドレシートに使用されます。
+# 例 : "ii-agent", "conclave", "irclaw-v2", "my-agent"
+name = "my-agent"
+
+# エージェントバイナリの SemVer バージョンです。[image].version と一致させるのが理想的です。
+# パターン : ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$
+version = "v0.1.0"
+
+# ---------------------------------------------------------------------------
+# [agent.source] — エージェントバイナリの取得元
+#
+# 3 つの戦略が利用できます。正確に 1 つのブロックのコメントを外してください。
+# ---------------------------------------------------------------------------
+
+# --- 戦略 A : url（直接 HTTPS ダウンロード）--------------------------------
+# 使用場面 : バイナリが公開 HTTPS エンドポイントでホストされている場合（GitHub リリース、
+# 独自 CDN、S3 署名付き URL など）。
+# 必須フィールド : type, url, sha256
+# sha256 はダウンロードしたファイルと一致しなければなりません。一致しない場合はビルドが中断されます。
+# すべてゼロの sha256 は検証の警告を発します — 本番前に必ず置き換えてください。
+[agent.source]
+type = "url"
+url = "https://releases.example.com/my-agent/v0.1.0/my-agent-freebsd-amd64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+# 実際の sha256 を計算する : sha256sum ./my-agent-freebsd-amd64 | awk '{print $1}'
+# または macOS/FreeBSD では :     shasum -a 256 ./my-agent-freebsd-amd64
+
+# --- 戦略 B : gitea_release（フリート内 Gitea）-------------------------
+# 使用場面 : バイナリがフリートの Gitea インスタンス上のリリースアセットである場合。
+# このフリートで内部開発されたエージェントの最も一般的なパスです。
+# 必須フィールド : type, repo, tag, asset, sha256
+# gitea.local はフリート LAN 上のポート 3000 の QNAS Gitea に解決されます。
+#
+# [agent.source]
+# type    = "gitea_release"
+# repo    = "my-team/my-agent"                          # gitea.local 上の owner/repo
+# tag     = "v0.1.0-freebsd-amd64"                      # リリースタグ
+# asset   = "my-agent-freebsd-amd64"                    # リリース内のファイル名
+# sha256  = "0000000000000000000000000000000000000000000000000000000000000000"
+# # genoa が解決する URL : http://gitea.local:3000/my-team/my-agent/releases/download/v0.1.0-freebsd-amd64/my-agent-freebsd-amd64
+
+# --- 戦略 C : local_path（開発ビルドアーティファクト）---------------------------
+# 使用場面 : ローカルで反復開発中；バイナリがビルドホストのファイルシステム上にある場合。
+# local_path では sha256 は不要です（リモートフェッチの検証がないため）。
+# 本番イメージを出荷する前に url または gitea_release に切り替えてください。
+#
+# [agent.source]
+# type = "local_path"
+# path = "/home/builder/my-agent/target/x86_64-unknown-freebsd/release/my-agent"
+
+# バイナリがインストールされるイメージ内の絶対パスです。
+# デフォルト : /usr/local/bin — rc.d とインタラクティブシェルの PATH に含まれます。
+# エージェントに非標準のインストール規約がある場合のみ変更してください。
+install_path = "/usr/local/bin"
+
+# ---------------------------------------------------------------------------
+# [agent.rc_service] — ブート時にエージェントを起動する rc.d サービス
+# このセクション全体を省略すると rc.d 統合をスキップします（手動起動のみ）。
+# ---------------------------------------------------------------------------
+[agent.rc_service]
+
+# rc.conf を通じてブート時にサービスを有効にするかどうかです。
+# false = サービスはインストールされているが有効化されていない；段階的ロールアウトに便利。
+enabled = true
+
+# rc.d サービス名です。慣例 : ハイフンではなくアンダースコア（rc.d の命名規則）。
+# genoa は /usr/local/etc/rc.d/<name> を生成し、/etc/rc.conf に
+# <name>_enable="YES" を追加します。
+name = "my_agent"
+
+# rc.d がエージェントバイナリを起動するときにそのまま渡される引数です。
+# 完全な呼び出しは次のようになります : /usr/local/bin/my-agent <command_args>
+# 一般的なパターン :
+#   --listen 0.0.0.0:8080          ポート 8080 のすべてのインターフェースにバインド
+#   --config /etc/agent/config.json  組み込み設定ファイルを指定
+#   --log-level info                 構造化ログの詳細度
+#   --data-dir /var/db/my-agent     永続的な状態ディレクトリ
+command_args = "--listen 0.0.0.0:8080 --config /etc/agent/config.json --log-level info"
+
+# ---------------------------------------------------------------------------
+# [agent.config] — イメージに組み込まれるキー/値の設定
+# キーは環境変数または /etc/agent/config のエントリになります（
+# genoa の rc.d テンプレートによって異なります）。すべての値は文字列でなければなりません。
+# エージェントが command_args だけで完全に設定される場合はこのセクションを省略してください。
+# ---------------------------------------------------------------------------
+[agent.config]
+LOG_LEVEL    = "info"                          # ログの詳細度
+API_ENDPOINT = "https://api.example.com/v1"   # エージェントが呼び出すアップストリーム API
+LISTEN_ADDR  = "0.0.0.0:8080"                 # command_args と冗長；説明のために示す
+DATA_DIR     = "/var/db/my-agent"             # VM 内の書き込み可能な状態ディレクトリ
+FLEET_ID     = "prod-iad-01"                  # 論理的なフリート識別子；リージョンごとに上書き
+TLS_SKIP_VERIFY = "false"                     # 本番環境では絶対に true にしないこと
+
+# ---------------------------------------------------------------------------
+# [network] — イメージに組み込まれる rc.conf ネットワーク設定
+# 省略すると genoa のデフォルトを使用します（vtnet0 で dhcp、ホスト名 smolbsd）。
+# ---------------------------------------------------------------------------
+[network]
+
+# VM 内のプライマリネットワークインターフェースです。
+# vtnet0 — VirtIO NIC；QEMU、KVM、Vultr、Linode、OCI に適切
+# ue0    — USB イーサネット（USB ドングル経由の RPi ボード）
+# genet0 — Broadcom GENET（Raspberry Pi 4/5 オンボード NIC）
+interface = "vtnet0"
+
+# ネットワークモードです。dhcp | static のいずれか。
+# dhcp   — クラウドプロバイダーに適切；ハイパーバイザーの DHCP で IP が割り当てられる
+# static — 固定 IP が必要な場合に使用（ベアメタルや macvlan ラボなど）
+mode = "dhcp"
+
+# 静的 IP 設定 — mode = "static" の場合のみ関係します。
+# 静的に切り替える際はここのコメントを外して値を入力してください :
+# mode       = "static"
+# static_ip  = "10.0.3.50/23"   # CIDR 表記；/23 = 512 ホストのフリートサブネット
+# gateway    = "10.0.3.1"
+
+# /etc/rc.conf と /etc/hosts に設定されるホスト名です。
+# フリートデプロイでは、エージェントの役割とリージョンを含む名前を使用してください。
+hostname = "my-agent-01"
+
+# ---------------------------------------------------------------------------
+# ブートプロファイル
+# uefi  — UEFI ブート；すべてのクラウドプロバイダーと最新ハードウェアに適切
+# kboot — kboot（Linux kexec 経由の FreeBSD ブートローダー）；実験的
+# ---------------------------------------------------------------------------
+profile = "uefi"
+
+# ---------------------------------------------------------------------------
+# [deploy] — クラウドプロバイダーへのディスパッチ
+# genoa は catalog/providers.v1.json でプロバイダーを検索して
+# deployment_path（例 : "snapshot-url"、"byoi-api"）を見つけます。
+# ---------------------------------------------------------------------------
+[deploy]
+
+# catalog/providers.v1.json からのプロバイダー ID です。
+# "vultr" — deployment_path : snapshot-url；中位帯域で最良の FreeBSD 体験
+# 他の検証済み ID : "oci", "linode_akamai", "digitalocean", "ovhcloud_public"
+# 上記のフォーマットを選択する前に catalog/providers.v1.json の byoi_format を確認してください。
+provider = "vultr"
+
+# カタログの deployment_path のオプション上書きです。
+# カタログエントリーが古い場合やアカウントに特別なアクセス権がある場合のみ使用してください。
+# path_override = "byoi-api"
+
+# ---------------------------------------------------------------------------
+# [signing] — signify(1) によるイメージ署名
+# 未署名のイメージを生成する場合はこのセクションを省略してください。
+# ---------------------------------------------------------------------------
+# [signing]
+# tool           = "signify"          # "signify" | "none"
+# key_file       = "~/.keys/genoa.sec"  # 秘密鍵 — 絶対にコミットしないこと
+# public_key_file = "keys/genoa.pub"   # 公開鍵 — コミットしても安全
+
+# ---------------------------------------------------------------------------
+# [metadata] — ビルドレシートに引き継がれる任意の文字列キー/値ペア
+# CI のトレーサビリティ、リージョンターゲティング、監査証跡に便利です。
+# すべての値は文字列でなければなりません。
+# ---------------------------------------------------------------------------
+[metadata]
+maintainer    = "agent-team@example.com"         # チームの連絡先
+repo          = "gitea.local/my-team/my-agent"   # ソースリポジトリ
+ci_pipeline   = "gitea-runner-01"                # このビルドを生成した CI ランナー
+target_region = "ewr"                            # Vultr リージョンスラグ（Newark）
+builder_notes = "amd64 production image, Vultr custom ISO upload"
+schema_docs   = "https://github.com/ryanmaclean/genoa/schema/manifest.v1.json"
