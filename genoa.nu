@@ -40,6 +40,45 @@ def "main build" [
 
   # Derive receipt path from manifest basename
   let manifest_basename = ($manifest_file | path basename | str replace --regex '\.[^.]+$' '')
+
+  # Remote build dispatch via target.build_host
+  let build_host = ($m.target?.build_host? | default "")
+  if $build_host != "" {
+    let parts = ($build_host | split row ":")
+    let ssh_dest = ($parts | first)
+    let ssh_port = if ($parts | length) > 1 { $parts | last } else { "22" }
+    let remote_manifest = $"/tmp/genoa-remote-($manifest_basename).toml"
+    if $dry_run {
+      return {
+        action: "would-run"
+        build_host: $build_host
+        ssh_dest: $ssh_dest
+        ssh_port: $ssh_port
+        remote_manifest: $remote_manifest
+        cmd: $"scp -P ($ssh_port) ($manifest_file) ($ssh_dest):($remote_manifest) && ssh -p ($ssh_port) ($ssh_dest) 'nu ~/genoa/genoa.nu build ($remote_manifest) --profile ($p)'"
+        note: "Remote build via target.build_host. Run without --dry-run to execute."
+      }
+    }
+    let scp_result = try {
+      ^scp -P $ssh_port $manifest_file $"($ssh_dest):($remote_manifest)" | complete
+    } catch { |e|
+      return {action: "failed", step: "scp_manifest", error: $e.msg, build_host: $build_host}
+    }
+    if $scp_result.exit_code != 0 {
+      return {action: "failed", step: "scp_manifest", stderr: $scp_result.stderr, build_host: $build_host}
+    }
+    let ssh_result = try {
+      ^ssh -p $ssh_port $ssh_dest $"nu ~/genoa/genoa.nu build ($remote_manifest) --profile ($p)" | complete
+    } catch { |e|
+      return {action: "failed", step: "ssh_build", error: $e.msg, build_host: $build_host}
+    }
+    if $ssh_result.exit_code != 0 {
+      return {action: "failed", step: "ssh_build", exit_code: $ssh_result.exit_code, stderr: $ssh_result.stderr}
+    }
+    let remote_result = try { $ssh_result.stdout | from json } catch { {raw: $ssh_result.stdout} }
+    return ($remote_result | merge {build_host: $build_host, remote: true})
+  }
+
   let receipt_path = $"($manifest_basename).receipt.json"
 
   # Derive image_path from manifest or use default
@@ -249,8 +288,9 @@ def "main validate" [manifest_file: string] {
   if $sha256 != "" {
     let all_zeros = ($sha256 | str replace --all "0" "" | str length) == 0
     let sha_pass = (not $all_zeros)
+    let sha_prefix = ($sha256 | str substring 0..8)
     let sha_detail = if $sha_pass {
-      $"sha256 present (($sha256 | str substring 0..8)...)"
+      $"sha256 present ($sha_prefix)..."
     } else {
       "sha256 is all-zeros placeholder — replace before production build"
     }
@@ -263,6 +303,14 @@ def "main validate" [manifest_file: string] {
   let semver_ok = ($agent_ver =~ '^v[0-9]+\.[0-9]+\.[0-9]+')
   $checks = ($checks | append {check: "agent_version_semver", pass: $semver_ok, detail: (if $semver_ok { $agent_ver } else { $"'($agent_ver)' does not match ^v[0-9]+\\.[0-9]+\\.[0-9]+" })})
   if not $semver_ok { $errors = ($errors | append $"agent_version_semver: '($agent_ver)' does not match semver") }
+
+  # 13. build_host_format (warn only)
+  let bh = ($m.target?.build_host? | default "")
+  if $bh != "" {
+    let bh_ok = ($bh =~ '^[a-z_][a-z0-9_.-]*@[a-z0-9._-]+(:[0-9]+)?$')
+    $checks = ($checks | append {check: "build_host_format", pass: $bh_ok, detail: (if $bh_ok { $"'($bh)' matches expected format" } else { $"'($bh)' does not match ^[a-z_][a-z0-9_.-]*@[a-z0-9._-]+(:[0-9]+)?$" })})
+    if not $bh_ok { $warnings = ($warnings | append $"build_host_format: '($bh)' does not match expected pattern — expected user@host or user@host:port") }
+  }
 
   {
     action: "validate"
