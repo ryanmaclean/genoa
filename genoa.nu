@@ -96,13 +96,8 @@ def "main build" [
     uefi_build $m $dry_run
   }
 
-  # Parse build_result — kboot_build returns a JSON string, others return records.
-  # Use try/catch to handle both cases without shadowing the built-in describe.
-  let build_record = try {
-    $build_result | from json
-  } catch {
-    $build_result
-  }
+  # Both kboot_build and uefi_build return records directly.
+  let build_record = $build_result
 
   # Write receipt file
   let image_sha256 = if $dry_run { "PLACEHOLDER_DRY_RUN" } else {
@@ -189,7 +184,7 @@ def "main deploy" [
     if not ($from_receipt | path exists) {
       error make {msg: $"receipt file not found: ($from_receipt)"}
     }
-    (open $from_receipt).image_path
+    let _r = open $from_receipt; $_r.image?.output_path? | default ($_r.image_path? | default "/tmp/genoa.raw")
   } else {
     ($m.image?.output_path? | default "/tmp/genoa.raw")
   }
@@ -358,7 +353,8 @@ def "main verify" [image: string, receipt_file: string] {
   # Peek at receipt to detect dry-run before deciding how to treat a missing image
   let receipt_ok_pre = ($receipt_file | path exists)
   let is_dry_run_receipt = if $receipt_ok_pre {
-    (open $receipt_file).dry_run? | default false
+    let _rv = open $receipt_file
+    $_rv.build?.dry_run? | default ($_rv.dry_run? | default false)
   } else { false }
 
   let image_check = if $image_ok {

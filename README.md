@@ -40,6 +40,7 @@ genoa publish <image> [--backend r2|s3|gitea]
 genoa deploy <manifest.toml> --provider <id>
 genoa verify <image> <receipt.json>
 genoa run <manifest.toml> [--provider <id>] [--backend r2|s3|gitea] [--dry-run]
+genoa status [--dir <path>]              # Scan for receipts, return aggregate build summary
 ```
 
 `run` is the end-to-end pipeline: validate → build → publish → deploy, returning a combined JSON result.

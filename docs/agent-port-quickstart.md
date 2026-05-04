@@ -81,11 +81,12 @@ nu genoa.nu validate your-agent.toml
 Passing output shape (JSON):
 ```json
 {
+  "action": "validated",
+  "manifest_path": "your-agent.toml",
   "valid": true,
-  "manifest": "your-agent.toml",
-  "schema_version": "v1",
-  "warnings": [],
-  "errors": []
+  "checks": [...],
+  "errors": [],
+  "warnings": []
 }
 ```
 
@@ -96,7 +97,7 @@ the build but should be resolved before production. Common warnings:
   `.byoi_format` for your `deploy.provider`
 
 On validation failure, `"valid": false` and `"errors"` contains an array of
-objects with `field` and `message` keys. Fix all errors before proceeding.
+strings describing what failed. Fix all errors before proceeding.
 
 ---
 
@@ -106,17 +107,17 @@ objects with `field` and `message` keys. Fix all errors before proceeding.
 nu genoa.nu build your-agent.toml --dry-run
 ```
 
-Prints a 16-step plan without executing any build steps. The plan is a JSON
-array; each element has:
+Prints a 16-step plan without executing any build steps. The plan is returned
+as a record with a `steps` array; each element has:
 ```json
-{ "step": 1, "action": "fetch_agent_binary", "status": "pending", "detail": "..." }
+{ "step": 3, "label": "create_disk_image", "action": "would-run", "description": "...", "cmd": "..." }
 ```
 
 Review steps to confirm:
-- Step 3 (`fetch_agent_binary`) shows the correct URL or path
-- Step 7 (`kernel_config`) lists your `extra_options` injected correctly
-- Step 12 (`install_rc_service`) names the correct rc.d service
-- Step 15 (`sign_image`) shows `tool: none` if signing is omitted
+- Step 2 (`resolve_artifacts`) shows the correct agent URL or path
+- Step 10 (`configure_loader`) lists your boot options rendered correctly
+- Step 12 (`inject_agent`) names the correct agent binary and rc.d service
+- Step 15 (`umount_and_compact`) is present before the receipt is emitted
 
 If any step detail looks wrong, fix the manifest and re-validate before
 running a real build.
@@ -171,10 +172,14 @@ VULTR_API_KEY=<your-key> nu genoa.nu deploy your-agent.toml
 On success the command returns a JSON object:
 ```json
 {
+  "action": "deployed",
   "provider": "vultr",
-  "image_id": "cb676a46-66fd-4dfb-b839-443f2e6c0b60",
-  "status": "active",
-  "receipt": "out/your-agent-freebsd-amd64-v0.1.0.receipt.json"
+  "snapshot_id": "cb676a46-66fd-4dfb-b839-443f2e6c0b60",
+  "instance_id": "...",
+  "instance_ip": "...",
+  "region": "ewr",
+  "plan": "vc2-1c-1gb",
+  "image_url": "https://..."
 }
 ```
 

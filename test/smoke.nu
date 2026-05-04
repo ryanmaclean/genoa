@@ -171,17 +171,34 @@ let tests = [
     $receipt_path
   })
 
-  # receipt_schema — receipt has required keys: receipt_id, image_path, manifest_sha256, built_at
+  # receipt_schema — receipt conforms to schema/receipt.v1.json:
+  # schema_version="v1", and required top-level objects: image, build, agent, hashes, claims
   (run_test "receipt_schema" {
     let rec = (genoa "main build 'examples/freebsd-vultr-aarch64.toml' --dry-run")
     let receipt_path = ($rec | get receipt_path)
     let receipt = (open $receipt_path)
-    let required = ["receipt_id" "image_path" "manifest_sha256" "built_at"]
+    # Check schema_version
+    if ($receipt.schema_version? | default "") != "v1" {
+      error make {msg: $"receipt schema_version expected v1, got: ($receipt.schema_version? | default 'missing')"}
+    }
+    # Check required top-level fields per schema/receipt.v1.json
+    let required = ["receipt_id" "built_at" "image" "build" "agent" "hashes" "claims"]
     let missing = ($required | where { |k| $k not-in $receipt })
     if ($missing | length) > 0 {
       error make {msg: $"receipt missing fields: ($missing | str join ', ')"}
     }
-    $"all required fields present in ($receipt_path)"
+    # Check nested required fields
+    let img_required = ["name" "version" "format" "output_path"]
+    let img_missing = ($img_required | where { |k| $k not-in $receipt.image })
+    if ($img_missing | length) > 0 {
+      error make {msg: $"receipt.image missing fields: ($img_missing | str join ', ')"}
+    }
+    let hashes_required = ["image_sha256" "manifest_sha256"]
+    let hashes_missing = ($hashes_required | where { |k| $k not-in $receipt.hashes })
+    if ($hashes_missing | length) > 0 {
+      error make {msg: $"receipt.hashes missing fields: ($hashes_missing | str join ', ')"}
+    }
+    $"v1 receipt schema valid: ($receipt_path)"
   })
 
   # deploy_dry_run — returns a record (not an exception)

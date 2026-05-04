@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
-  "receipt_id": "841aeed7-8ae8-4516-9900-018e034e2cd6",
-  "built_at": "2026-05-04T14:23:37Z",
+  "receipt_id": "ef0ec97e-2d04-409c-8b51-3e928e3f9976",
+  "built_at": "2026-05-04T14:24:54Z",
   "image": {
     "name": "smolbsd-linode-amd64",
     "version": "v0.1.0",
@@ -19,7 +19,7 @@
   "agent": {
     "name": "ii-agent",
     "version": "v0.1.0",
-    "install_path": "/usr/local/bin/ ii-agent"
+    "install_path": "/usr/local/bin/agent"
   },
   "hashes": {
     "image_sha256": "PLACEHOLDER_DRY_RUN",
