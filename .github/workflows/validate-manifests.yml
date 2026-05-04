@@ -1,0 +1,40 @@
+name: Validate Example Manifests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'examples/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nushell
+        run: |
+          NU_VERSION="0.101.0"
+          curl -fsSL "https://github.com/nushell/nushell/releases/download/${NU_VERSION}/nu-${NU_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin \
+                nu-${NU_VERSION}-x86_64-unknown-linux-gnu/nu
+          nu --version
+
+      - name: Validate all example manifests
+        run: |
+          for f in examples/*.toml; do
+            echo "Validating $f..."
+            nu genoa.nu validate "$f" | nu -c 'from json | if ($in.valid) { exit 0 } else { print $in.errors; exit 1 }'
+          done

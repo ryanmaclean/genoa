@@ -203,6 +203,21 @@ let tests = [
     ($rec | get pipeline)
   })
 
+  # status_no_receipts_in_clean_dir — receipts_found == 0 in an empty temp dir
+  (run_test "status_no_receipts_in_clean_dir" {
+    let tmp = (^mktemp -d | str trim)
+    # Copy genoa.nu into temp dir so source works without relative-path issues
+    ^cp genoa.nu $tmp
+    let script = $"cd ($tmp); source genoa.nu; main status | to json"
+    let rec = (^nu -c $script | from json)
+    ^rm -rf $tmp
+    let found = ($rec | get receipts_found)
+    if $found != 0 {
+      error make {msg: $"expected receipts_found=0 in clean dir, got ($found)"}
+    }
+    $"receipts_found=($found)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

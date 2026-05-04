@@ -75,6 +75,23 @@ nu test/smoke.nu
 
 Lance 16 tests de fumée couvrant tous les sous-commandes. Code de sortie 0 = tous réussis.
 
+## Sous-commandes
+
+```nushell
+genoa catalog                            # Lister les fournisseurs depuis catalog/providers.v1.json
+genoa schema                             # Afficher le schéma du manifest (JSON Schema)
+genoa describe <manifest.toml>           # Parser + valider, afficher le plan JSON
+genoa validate <manifest.toml>           # Valider le manifest contre le schéma, retourner les résultats
+genoa build <manifest.toml> [--profile uefi|kboot] [--dry-run]
+genoa publish <image> [--backend r2|s3|gitea]
+genoa deploy <manifest.toml> --provider <id>
+genoa verify <image> <receipt.json>
+genoa status <receipt.json>              # Afficher le statut de déploiement depuis un reçu
+genoa run <manifest.toml> [--provider <id>] [--backend r2|s3|gitea] [--dry-run]
+```
+
+`run` est le pipeline complet : build → publish → deploy, retournant un résultat JSON combiné.
+
 ## Voir aussi
 
 `docs/agent-port-quickstart.md` — empaqueter votre binaire agent dans un manifest genoa.

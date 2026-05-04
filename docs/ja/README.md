@@ -75,6 +75,23 @@ nu test/smoke.nu
 
 全サブコマンドをカバーする 16 項目のスモークテストを実行します。終了コード 0 = 全テスト合格。
 
+## サブコマンド一覧
+
+```nushell
+genoa catalog                            # catalog/providers.v1.json からプロバイダーを一覧表示
+genoa schema                             # マニフェストスキーマ（JSON Schema）を出力
+genoa describe <manifest.toml>           # パース + 検証してプラン JSON を表示
+genoa validate <manifest.toml>           # マニフェストをスキーマに対して検証し結果を返す
+genoa build <manifest.toml> [--profile uefi|kboot] [--dry-run]
+genoa publish <image> [--backend r2|s3|gitea]
+genoa deploy <manifest.toml> --provider <id>
+genoa verify <image> <receipt.json>
+genoa status <receipt.json>              # ビルドレシートからデプロイ状況を表示
+genoa run <manifest.toml> [--provider <id>] [--backend r2|s3|gitea] [--dry-run]
+```
+
+`run` はエンドツーエンドのパイプラインです: build → publish → deploy を連結し、統合 JSON 結果を返します。
+
 ## 関連ドキュメント
 
 `docs/agent-port-quickstart.md` — エージェントバイナリを genoa マニフェストにパッケージングする手順。

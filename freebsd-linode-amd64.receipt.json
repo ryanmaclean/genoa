@@ -1,11 +1,11 @@
 {
   "schema_version": "1",
-  "receipt_id": "434f5a03-7b28-4c53-8fbd-5f2025d35071",
+  "receipt_id": "924509c8-8ef2-47bb-b44b-762e6f3f37b0",
   "image_path": "/tmp/genoa-freebsd-linode-amd64.raw",
   "image_sha256": "dry-run-placeholder",
   "manifest_path": "examples/freebsd-linode-amd64.toml",
   "manifest_sha256": "55f1beb26036de7ec82d6f8b24cfebb2e097f674983910ebb34ecda29037d6de",
   "profile": "kboot",
-  "built_at": "2026-05-04T14:01:19Z",
+  "built_at": "2026-05-04T14:17:49Z",
   "dry_run": true
 }

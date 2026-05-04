@@ -465,6 +465,63 @@ def "main verify" [image: string, receipt_file: string] {
   }
 }
 
+def "main status" [] {
+  # Find all receipt files in current dir and subdirs (max depth 2)
+  let receipts = try { ls **/*.receipt.json | get name } catch { [] }
+
+  # Also check ./out/ directory
+  let out_receipts = if ("out" | path exists) {
+    try { ls out/*.receipt.json | get name } catch { [] }
+  } else { [] }
+
+  let all_receipts = ($receipts | append $out_receipts | uniq)
+
+  if ($all_receipts | is-empty) {
+    return {
+      action: "status"
+      receipts_found: 0
+      message: "No receipts found. Run `genoa build <manifest>` to create one."
+      tip: "Receipts are written as <manifest-basename>.receipt.json after each build."
+    }
+  }
+
+  let parsed = $all_receipts | each { |path|
+    let r = try { open $path } catch { null }
+    if $r == null { return {path: $path, status: "unreadable"} }
+    {
+      path: $path
+      receipt_id: ($r.receipt_id? | default "unknown")
+      image_path: ($r.image_path? | default "unknown")
+      image_exists: ($r.image_path? | default "" | path exists)
+      profile: ($r.profile? | default "unknown")
+      built_at: ($r.built_at? | default "unknown")
+      dry_run: ($r.dry_run? | default false)
+      manifest_path: ($r.manifest_path? | default "unknown")
+      sha256_placeholder: (($r.image_sha256? | default "") == "dry-run-placeholder")
+    }
+  }
+
+  let real_builds = ($parsed | where dry_run == false)
+  let dry_runs = ($parsed | where dry_run == true)
+  let images_on_disk = ($parsed | where image_exists == true)
+
+  {
+    action: "status"
+    receipts_found: ($all_receipts | length)
+    real_builds: ($real_builds | length)
+    dry_runs: ($dry_runs | length)
+    images_on_disk: ($images_on_disk | length)
+    receipts: $parsed
+    next_steps: (if ($real_builds | is-empty) {
+      ["No real builds yet. Run: nu genoa.nu build <manifest.toml>"]
+    } else if ($images_on_disk | is-empty) {
+      ["Images not found at recorded paths. They may have been moved or deleted."]
+    } else {
+      ["Images ready. Run: nu genoa.nu deploy <manifest.toml> to deploy."]
+    })
+  }
+}
+
 def "main publish" [
   image: string
   --backend: string = "r2"
@@ -511,13 +568,20 @@ def "main run" [
     (open $receipt_path).image_path
   } else { "/tmp/genoa.raw" }
   let pub_result = (main publish $image_path --backend $backend --dry-run=$dry_run)
-  # 3. deploy
-  let dep_result = (main deploy $manifest_file --provider $provider --dry-run=$dry_run)
+  # Extract published URL from pub_result
+  let published_url = $pub_result | get url? | default ""
+  # 3. deploy — pass published_url via --image so the Vultr adapter gets export_url
+  let dep_result = if $published_url != "" {
+    (main deploy $manifest_file --provider $provider --image $published_url --dry-run=$dry_run)
+  } else {
+    (main deploy $manifest_file --provider $provider --dry-run=$dry_run)
+  }
   # Return combined pipeline result
   {
     pipeline: "build→publish→deploy"
     build:   $build_result
     publish: $pub_result
+    published_url: $published_url
     deploy:  $dep_result
   }
 }
@@ -525,7 +589,7 @@ def "main run" [
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  verify  run"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  verify  run  status"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.[\"providers\"][0]'"
 }
