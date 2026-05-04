@@ -231,7 +231,7 @@ def "main validate" [manifest_file: string] {
   if not $slug_ok { $errors = ($errors | append $"image_name_slug: '($img_name)' is not a valid slug") }
 
   # 5. image_format
-  let valid_formats = ["raw", "qcow2", "vmdk", "iso"]
+  let valid_formats = ["raw", "qcow2", "vmdk"]
   let img_fmt = ($m.image?.format? | default "")
   let fmt_ok = ($img_fmt in $valid_formats)
   $checks = ($checks | append {check: "image_format", pass: $fmt_ok, detail: (if $fmt_ok { $img_fmt } else { $"'($img_fmt)' not in ($valid_formats | str join ', ')" })})

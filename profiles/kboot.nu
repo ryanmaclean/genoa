@@ -43,10 +43,11 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
     # Returns JSON with steps in execution order. When dry_run=true,
     # all destructive steps have action="would-run" and no side effects.
 
-    let hostname = $manifest.hostname? | default "freebsd-kboot"
-    let image_size_gb = $manifest.image_size_gb? | default 8
-    let image_path = $manifest.image_path? | default "/tmp/genoa-kboot.raw"
-    let task_endpoint = $manifest.task_endpoint? | default "https://api.example.com"
+    let hostname = $manifest.network?.hostname? | default "smolbsd"
+    let image_size_mb = $manifest.image?.size_mb? | default 2048
+    let image_size_gb = ($image_size_mb / 1024)
+    let image_path = $"($manifest.image?.output_dir? | default "./out")/genoa-kboot.raw"
+    let task_endpoint = ""
 
     # Step 1
     let step1 = run_step {
@@ -166,7 +167,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         step: 9
         label: "build_linux_kernel"
         action: "would-run"
-        cmd: "cd /tmp/linux-build && make -j$(nproc) x86_64_defconfig && make menuconfig && make -j$(nproc) bzImage"
+        cmd: "cd /tmp/linux-build && make -j$(nproc) x86_64_defconfig && make -j$(nproc) bzImage"
         description: "Build minimal Linux kernel (virtio + kexec + ext4)"
         notes: [
             "Kernel image (bzImage) will be placed at /tmp/linux-build/arch/x86_64/boot/bzImage"
@@ -259,12 +260,15 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         return ({action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15} | to json)
     }
 
+    let os_ver = $manifest.target?.os_version? | default "15.0-RELEASE"
+    let arch = $manifest.target?.arch? | default "amd64"
+
     # Step 16
     let step16 = run_step {
         step: 16
         label: "extract_freebsd_base"
         action: "would-run"
-        cmd: "tar -xf /path/to/FreeBSD-13.2-RELEASE-amd64-base.txz -C /mnt/freebsd"
+        cmd: $"tar -xf /path/to/FreeBSD-($os_ver)-($arch)-base.txz -C /mnt/freebsd"
         description: "Extract FreeBSD base system to UFS2 root"
         notes: [
             "Must source FreeBSD release media (base.txz, kernel.txz)"

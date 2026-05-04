@@ -3,7 +3,7 @@ schema_version = "v1"
 [image]
 name = "smolbsd-vultr-aarch64"
 version = "v0.1.0"
-format = "iso"
+format = "raw"
 size_mb = 2048
 description = "Minimal FreeBSD for Vultr aarch64 via ISO boot"
 
@@ -50,5 +50,5 @@ profile = "uefi"
 provider = "vultr"
 
 [metadata]
-builder_notes = "ISO format for Vultr custom ISO upload"
+builder_notes = "Raw disk image for Vultr snapshot-url import"
 target_region = "global"

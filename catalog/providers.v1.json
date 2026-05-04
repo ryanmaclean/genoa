@@ -137,7 +137,7 @@
       "display_name": "Vultr Cloud Compute",
       "byoi_support": "api",
       "byoi_format": [
-        "iso"
+        "raw"
       ],
       "bsd_native_support": [
         "freebsd"
@@ -176,7 +176,7 @@
         "amd64",
         "aarch64"
       ],
-      "deployment_path": "byoi-api",
+      "deployment_path": "rescue-dd",
       "notes": "CRITICAL: FreeBSD not officially supported. Only ext3/ext4 accepted - rules out UFS and ZFS natively. Max 6 GB uncompressed is very small for BSD images with packages. Aarch64 available for instances but not confirmed for custom image upload."
     },
     {
