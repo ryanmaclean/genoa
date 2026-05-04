@@ -41,6 +41,20 @@ def "main build" [
   # Derive receipt path from manifest basename
   let manifest_basename = ($manifest_file | path basename | str replace --regex '\.[^.]+$' '')
 
+  # Read output_dir from manifest (default ./out) and ensure it exists
+  let output_dir = ($m.image?.output_dir? | default "./out")
+  ^mkdir -p $output_dir
+
+  # Derive canonical artifact names from manifest fields
+  let image_name = ($m.image?.name? | default "genoa")
+  let image_version = ($m.image?.version? | default "v0.0.0")
+  let image_format = ($m.image?.format? | default "raw")
+  let image_filename = $"($image_name)-($image_version).($image_format)"
+  let receipt_filename = $"($image_name)-($image_version).receipt.json"
+
+  let image_path = $"($output_dir)/($image_filename)"
+  let receipt_path = $"($output_dir)/($receipt_filename)"
+
   # Remote build dispatch via target.build_host
   let build_host = ($m.target?.build_host? | default "")
   if $build_host != "" {
@@ -76,13 +90,37 @@ def "main build" [
       return {action: "failed", step: "ssh_build", exit_code: $ssh_result.exit_code, stderr: $ssh_result.stderr}
     }
     let remote_result = try { $ssh_result.stdout | from json } catch { {raw: $ssh_result.stdout} }
-    return ($remote_result | merge {build_host: $build_host, remote: true})
+
+    # SCP artifacts back from remote to local output_dir
+    let remote_image = $remote_result.image?.path? | default $"./out/($image_filename)"
+    let remote_receipt = $"($remote_image | path parse | get parent)/($remote_image | path basename | str replace -r '\\.\\w+$' '.receipt.json')"
+
+    let scp_image = try {
+      ^scp -P $ssh_port $"($ssh_dest):($remote_image)" $output_dir | complete
+    } catch { |e| {exit_code: -1, stderr: $e.msg} }
+
+    if $scp_image.exit_code != 0 {
+      return {action: "failed", step: "scp_image_back", stderr: $scp_image.stderr, build_host: $build_host, remote_result: $remote_result}
+    }
+
+    let scp_receipt = try {
+      ^scp -P $ssh_port $"($ssh_dest):($remote_receipt)" $output_dir | complete
+    } catch { |e| {exit_code: -1, stderr: $e.msg} }
+
+    # Receipt SCP failure is a warning, not a hard failure
+    let receipt_back = if $scp_receipt.exit_code == 0 {
+      $"($output_dir)/($remote_receipt | path basename)"
+    } else {
+      ""
+    }
+
+    return ($remote_result | merge {
+      build_host: $build_host
+      remote: true
+      image_path: $"($output_dir)/($remote_image | path basename)"
+      receipt_path: $receipt_back
+    })
   }
-
-  let receipt_path = $"($manifest_basename).receipt.json"
-
-  # Derive image_path from manifest or use default
-  let image_path = ($m.image?.output_path? | default $"/tmp/genoa-($manifest_basename).raw")
 
   let manifest_content = open $manifest_file
 
@@ -177,7 +215,7 @@ def "main deploy" [
     return {action: "stub", reason: $"($afile) not found", provider: $pid}
   }
 
-  # Resolve image path: --image > --from-receipt > manifest field > default
+  # Resolve image path: --image > --from-receipt > output_dir + manifest fields > fallback
   let image = if $image != "" {
     $image
   } else if $from_receipt != "" {
@@ -186,7 +224,11 @@ def "main deploy" [
     }
     let _r = open $from_receipt; $_r.image?.output_path? | default ($_r.image_path? | default "/tmp/genoa.raw")
   } else {
-    ($m.image?.output_path? | default "/tmp/genoa.raw")
+    let _output_dir  = ($m.image?.output_dir? | default "./out")
+    let _img_name    = ($m.image?.name?       | default "genoa")
+    let _img_version = ($m.image?.version?    | default "v0.0.0")
+    let _img_format  = ($m.image?.format?     | default "raw")
+    $"($_output_dir)/($_img_name)-($_img_version).($_img_format)"
   }
 
   if $path == "rescue-dd" {
@@ -622,15 +664,3 @@ def main [] {
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }
-
-# --- legacy bare defs (keep for source-import compatibility) ---
-
-def catalog [] {
-  open "catalog/providers.v1.json"
-}
-
-def schema [] { open "schema/manifest.v1.json" }
-def describe [f: string] { if not ($f | path exists) { error make {msg: $"not found: ($f)"} }; open $f }
-def build [f: string] { {action: "stub", note: "use: nu genoa.nu build <manifest>"} }
-def deploy [f: string, p: string] { {action: "stub", note: "use: nu genoa.nu deploy <manifest> --provider <id>"} }
-def verify [i: string, r: string] { main verify $i $r }

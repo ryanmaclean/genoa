@@ -3,7 +3,6 @@
   "$id": "https://github.com/ryanmaclean/genoa/schema/manifest.v1.json",
   "title": "genoa unified manifest",
   "description": "v1 manifest schema for smolBSD-for-agents image build. Feed this to `genoa build`.",
-  "schema_version": "2",
   "version": "1.0.0",
   "type": "object",
   "required": ["schema_version", "image", "target", "kernel", "agent"],

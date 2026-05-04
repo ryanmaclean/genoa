@@ -135,55 +135,8 @@ def render_rc_conf [manifest: record] {
 }
 
 # ---------------------------------------------------------------------------
-# emit_receipt — step 16 (real)
-# Compute sha256 of the output image and build a receipt record.
-# On FreeBSD with dry_run=false: uses ^sha256 -q for the real digest.
-# Otherwise: uses a placeholder sha256.
-# ---------------------------------------------------------------------------
-def emit_receipt [manifest: record, dry_run: bool] {
-    let image_name = $manifest | get image? | get name? | default "unknown"
-    let image_path = $"/tmp/genoa-($image_name).raw"
-
-    let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
-    let sha256 = if (not $dry_run) and $is_freebsd and ($image_path | path exists) {
-        try { ^sha256 -q $image_path | str trim } catch { "PLACEHOLDER_DRY_RUN" }
-    } else {
-        "PLACEHOLDER_DRY_RUN"
-    }
-
-    {
-        schema_version: "v1"
-        receipt_id: (random uuid)
-        built_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-        image: {
-            name: ($manifest | get image? | get name? | default "unknown")
-            version: ($manifest | get image? | get version? | default "v0.0.0")
-            format: ($manifest | get image? | get format? | default "raw")
-            output_path: $image_path
-        }
-        build: {
-            host: (try { ^uname -n | str trim } catch { "unknown" })
-            builder_type: "dry-run"
-            os_version: ($manifest | get target? | get os_version? | default "unknown")
-            arch: ($manifest | get target? | get arch? | default "unknown")
-            genoa_version: "v0.1.0"
-            dry_run: $dry_run
-        }
-        agent: {
-            name: ($manifest | get agent? | get name? | default "unknown")
-            version: ($manifest | get agent? | get version? | default "v0.0.0")
-            install_path: ($manifest | get agent? | get install_path? | default "/usr/local/bin/agent")
-        }
-        hashes: {
-            image_sha256: $sha256
-            manifest_sha256: ($manifest | to json | hash sha256)
-        }
-        claims: []
-    }
-}
-
-# ---------------------------------------------------------------------------
 # uefi_build — public entry point
+# Receipt writing is handled by genoa.nu main build after this function returns.
 # ---------------------------------------------------------------------------
 export def uefi_build [manifest: record, dry_run: bool = false] {
     # ── step 1: validate_manifest (real) ───────────────────────────────────
@@ -405,8 +358,8 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15}
     }
 
-    # ── step 16: emit receipt (real) ───────────────────────────────────────
-    let receipt = emit_receipt $manifest $dry_run
+    # Receipt is written by genoa.nu main build after the profile returns.
+    # emit_receipt was removed from this profile (D2 cleanup).
 
     {
         schema_version: "1"
@@ -500,15 +453,6 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
             # ── 15. umount_and_compact ────────────────────────────────────────
             $step15
-
-            # ── 16. emit_receipt (real) ────────────────────────────────────────
-            {
-                step: 16
-                label: "emit_receipt"
-                action: "real"
-                description: "Compute sha256 of output image path and emit receipt.json."
-                receipt: $receipt
-            }
         ]
     }
 }

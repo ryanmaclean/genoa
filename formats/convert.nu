@@ -142,6 +142,7 @@ export def convert_to_vmdk [input: string, output: string, dry_run: bool = false
 }
 
 export def convert_to_gcstar [input: string, output: string, dry_run: bool = false] {
+  # Available for GCE image format upload.
   # GCE tar: cp disk.raw disk.raw && tar -czvf image.tar.gz disk.raw
   # Google Cloud's importer looks for a file named exactly disk.raw
 
