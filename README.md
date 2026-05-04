@@ -28,17 +28,33 @@ nu genoa.nu build examples/freebsd-vultr-aarch64.toml --profile uefi
 - `build` executes the profile (uefi / kboot), emits image + receipt with attestation.
 - Optional `--dry-run` shows what would happen without actually building.
 
+## Subcommands
+
+```nushell
+genoa catalog                            # List providers from catalog/providers.v1.json
+genoa schema                             # Print manifest schema (JSON Schema)
+genoa describe <manifest.toml>           # Parse + validate, print plan JSON
+genoa validate <manifest.toml>           # Validate manifest against schema, return check results
+genoa build <manifest.toml> [--profile uefi|kboot] [--dry-run]
+genoa publish <image> [--backend r2|s3|gitea]
+genoa deploy <manifest.toml> --provider <id>
+genoa verify <image> <receipt.json>
+genoa run <manifest.toml> [--provider <id>] [--backend r2|s3|gitea] [--dry-run]
+```
+
+`run` is the end-to-end pipeline: build → publish → deploy, returning a combined JSON result.
+
 ## Core concepts
 
 **Manifest** (TOML)
 - Declarative image specification: OS, kernel, packages, agent payload, network config, deployment target.
 - Versioned schema: v1 = current (field additions backcompat).
-- Includes deployment metadata: provider ID and optional path override.
+- Includes `target.build_host` for remote FreeBSD build hosts (see Remote build host below).
 
 **Profile** (enum: uefi, kboot)
 - Boot loader strategy selected at build time.
-- Dispatches to `profiles/uefi.nu` or `profiles/kboot.nu` (not yet implemented).
-- Stubs emit JSON reason if missing.
+- Dispatches to `profiles/uefi.nu` or `profiles/kboot.nu`.
+- Both execute real commands on FreeBSD via `run_step`; on non-FreeBSD hosts with `--dry-run`, they return a structured plan.
 
 **Receipt** (JSON)
 - Attestation envelope emitted alongside every image.
@@ -50,57 +66,43 @@ nu genoa.nu build examples/freebsd-vultr-aarch64.toml --profile uefi
 - `deployment_path` field routes dispatch logic: `rescue-dd`, `byoi-api`, `snapshot-url`.
 - Read from `catalog/providers.v1.json`.
 
+## Adapters
+
+**vultr.nu** — makes real Vultr API calls. Requires `VULTR_API_KEY`. Supports snapshot-from-URL (upload a public image URL, Vultr imports it). Dry-run returns plan JSON without credentials or API calls.
+
+**linode.nu** — generates a structured rescue+dd deployment plan (Path 3, officially documented by Linode): boot-to-rescue, SSH access, image verify, `curl | dd` write, reboot. No credentials required to generate the plan.
+
+**oci.nu** — stub; returns `{"action":"stub"}` for unsupported providers.
+
+## Remote build host
+
+Set `target.build_host = "user@host"` (or `"user@host:port"`) in the manifest. When present, `genoa build` SCPs the manifest to the host and runs the build via SSH, returning the remote result. Useful when the local machine is not FreeBSD.
+
+## Testing
+
+```bash
+nu test/smoke.nu
+```
+
+16 smoke tests covering catalog, schema, describe, validate, build (dry-run, uefi, kboot), deploy (Vultr dry-run, Linode), publish (dry-run), verify, run (dry-run), and missing-file error handling.
+
 ## File layout
 
-```
-genoa/
-├── genoa.nu                          # Main CLI (Nushell)
-├── schema/
-│   ├── manifest.v1.json              # Manifest schema (JSON Schema)
-│   └── receipt.v1.json               # Receipt schema
-├── catalog/
-│   └── providers.v1.json             # Provider catalog (40 entries)
-├── examples/
-│   ├── freebsd-vultr-aarch64.toml    # ISO for Vultr
-│   └── freebsd-linode-amd64.toml     # Raw for Linode rescue-dd
-├── profiles/
-│   ├── uefi.nu                       # (stub: not yet implemented)
-│   └── kboot.nu                      # (stub: not yet implemented)
-├── adapters/
-│   ├── vultr.nu                      # (stub: not yet implemented)
-│   ├── linode.nu                     # (stub: not yet implemented)
-│   └── oci.nu                        # (stub: not yet implemented)
-├── LICENSE                           # BSD-2-Clause
-└── README.md                         # This file
-```
-
-## Subcommands
-
-```nushell
-genoa catalog                            # List providers from catalog/providers.v1.json
-genoa schema                             # Print manifest schema (JSON Schema)
-genoa describe <manifest.toml>           # Parse + validate, print plan JSON
-genoa build <manifest.toml> [--profile uefi|kboot] [--dry-run]
-genoa publish <image> [--backend r2|s3|gitea]
-genoa deploy <manifest.toml> --provider <id>
-genoa verify <image> <receipt.json>
-```
-
-### build dispatch logic
-- Read manifest profile (default: uefi).
-- Source `profiles/{profile}.nu`.
-- Call `{profile}_build $manifest`.
-- Emit receipt JSON to `{image.output_dir}/{image.name}-{image.version}.receipt.json`.
-
-### deploy dispatch logic
-- Read manifest deploy.provider and deploy.path_override.
-- Look up provider in catalog by ID.
-- Extract deployment_path (or use override).
-- Match deployment_path:
-  - `rescue-dd` → source `adapters/linode.nu` → call `linode_deploy $manifest $image`
-  - `snapshot-url` → source `adapters/vultr.nu` → call `vultr_deploy $manifest $image`
-  - `byoi-api` → source `adapters/oci.nu` → call `oci_deploy $manifest $image`
-  - (others) → error with unsupported deployment_path
+| Path | Purpose |
+|---|---|
+| `genoa.nu` | Main CLI (all subcommands) |
+| `publish.nu` | Standalone publish helper |
+| `schema/manifest.v1.json` | JSON Schema for manifests |
+| `schema/receipt.v1.json` | JSON Schema for receipts |
+| `catalog/providers.v1.json` | Provider catalog (40 entries) |
+| `profiles/uefi.nu` | UEFI profile — real FreeBSD commands |
+| `profiles/kboot.nu` | kboot profile — real FreeBSD commands |
+| `adapters/vultr.nu` | Vultr adapter — real API calls |
+| `adapters/linode.nu` | Linode adapter — rescue+dd plan |
+| `formats/convert.nu` | Image format conversion |
+| `templates/` | uefi/, kboot/, publish/ build templates |
+| `docs/agent-port-quickstart.md` | LLM-first quickstart |
+| `test/smoke.nu` | 16 smoke tests |
 
 ## Design notes
 
@@ -109,21 +111,8 @@ genoa verify <image> <receipt.json>
 - All output is JSON (catalog, schema, receipts, plan, hashes).
 - No prose parsing required.
 - Single `catalog` endpoint lists all providers; dispatch is deterministic by ID + path.
+- See `docs/agent-port-quickstart.md` for the agent-optimized onboarding path.
 
-**Stubs**
-- Unimplemented profiles and adapters return `{"action":"stub","reason":"..."}` JSON.
-- Allows CLI to be invoked in test/audit mode before all backends are built.
+**Attestation** — every build emits a receipt with image SHA256, manifest SHA256, agent source + SHA256. Verifiable by fleet-eval: `fleet-eval verify "image built" --probe "sha256sum $image" --expect "..."`
 
-**Attestation**
-- Every build emits a receipt with image SHA256, manifest SHA256, agent source + SHA256.
-- Verifiable by fleet-eval: `fleet-eval verify "image built" --probe "sha256sum $image" --expect "..."`
-
-**License**
-- BSD-2-Clause (MIT-compatible).
-- All dependencies must be MIT, BSD-2-Clause, BSD-3-Clause, or Apache-2.0.
-
-## See also
-
-- `/Users/studio/genoa/option-a-smolbsd/` — reference implementation of smolBSD build infrastructure.
-- `/Users/studio/genoa/research-r1-providers/providers.json` — source research for provider catalog.
-- `~/.claude/skills/fleet-eval/` — verification harness for attestation receipts.
+**License** — BSD-2-Clause (MIT-compatible). All dependencies must be MIT, BSD-2-Clause, BSD-3-Clause, or Apache-2.0.
