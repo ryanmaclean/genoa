@@ -1,11 +1,29 @@
 {
-  "schema_version": "1",
-  "receipt_id": "a512cc81-c590-4397-bed9-03ec19eab1d4",
-  "image_path": "/tmp/genoa-freebsd-linode-amd64.raw",
-  "image_sha256": "dry-run-placeholder",
-  "manifest_path": "examples/freebsd-linode-amd64.toml",
-  "manifest_sha256": "55f1beb26036de7ec82d6f8b24cfebb2e097f674983910ebb34ecda29037d6de",
-  "profile": "kboot",
-  "built_at": "2026-05-04T14:22:12Z",
-  "dry_run": true
+  "schema_version": "v1",
+  "receipt_id": "841aeed7-8ae8-4516-9900-018e034e2cd6",
+  "built_at": "2026-05-04T14:23:37Z",
+  "image": {
+    "name": "smolbsd-linode-amd64",
+    "version": "v0.1.0",
+    "format": "raw",
+    "output_path": "/tmp/genoa-freebsd-linode-amd64.raw"
+  },
+  "build": {
+    "host": "mbp-m1.local",
+    "builder_type": "dry-run",
+    "os_version": "15.0-RELEASE",
+    "arch": "amd64",
+    "genoa_version": "v0.1.0",
+    "dry_run": true
+  },
+  "agent": {
+    "name": "ii-agent",
+    "version": "v0.1.0",
+    "install_path": "/usr/local/bin/ ii-agent"
+  },
+  "hashes": {
+    "image_sha256": "PLACEHOLDER_DRY_RUN",
+    "manifest_sha256": "55f1beb26036de7ec82d6f8b24cfebb2e097f674983910ebb34ecda29037d6de"
+  },
+  "claims": []
 }

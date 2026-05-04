@@ -58,7 +58,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: $"Create ($image_size_gb)G raw disk image"
     } $dry_run
     if $step1.action == "failed" {
-        return ({action: "build-failed", failed_step: $step1.label, exit_code: $step1.exit_code, detail: $step1} | to json)
+        return {action: "build-failed", failed_step: $step1.label, exit_code: $step1.exit_code, detail: $step1}
     }
 
     # Step 2
@@ -71,7 +71,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         details: "Uses GPT and modern partition type GUIDs for clarity"
     } $dry_run
     if $step2.action == "failed" {
-        return ({action: "build-failed", failed_step: $step2.label, exit_code: $step2.exit_code, detail: $step2} | to json)
+        return {action: "build-failed", failed_step: $step2.label, exit_code: $step2.exit_code, detail: $step2}
     }
 
     # Step 3
@@ -83,7 +83,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Format p1 as FAT32 for EFI System Partition"
     } $dry_run
     if $step3.action == "failed" {
-        return ({action: "build-failed", failed_step: $step3.label, exit_code: $step3.exit_code, detail: $step3} | to json)
+        return {action: "build-failed", failed_step: $step3.label, exit_code: $step3.exit_code, detail: $step3}
     }
 
     # Step 4
@@ -101,7 +101,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         ]
     } $dry_run
     if $step4.action == "failed" {
-        return ({action: "build-failed", failed_step: $step4.label, exit_code: $step4.exit_code, detail: $step4} | to json)
+        return {action: "build-failed", failed_step: $step4.label, exit_code: $step4.exit_code, detail: $step4}
     }
 
     # Step 5
@@ -113,7 +113,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Mount p2 to /mnt/kboot for file staging"
     } $dry_run
     if $step5.action == "failed" {
-        return ({action: "build-failed", failed_step: $step5.label, exit_code: $step5.exit_code, detail: $step5} | to json)
+        return {action: "build-failed", failed_step: $step5.label, exit_code: $step5.exit_code, detail: $step5}
     }
 
     # Step 6
@@ -129,7 +129,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         ]
     } $dry_run
     if $step6.action == "failed" {
-        return ({action: "build-failed", failed_step: $step6.label, exit_code: $step6.exit_code, detail: $step6} | to json)
+        return {action: "build-failed", failed_step: $step6.label, exit_code: $step6.exit_code, detail: $step6}
     }
 
     # Step 7 — render step, no cmd, stays as-is
@@ -159,7 +159,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         ]
     } $dry_run
     if $step8.action == "failed" {
-        return ({action: "build-failed", failed_step: $step8.label, exit_code: $step8.exit_code, detail: $step8} | to json)
+        return {action: "build-failed", failed_step: $step8.label, exit_code: $step8.exit_code, detail: $step8}
     }
 
     # Step 9
@@ -175,7 +175,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         ]
     } $dry_run
     if $step9.action == "failed" {
-        return ({action: "build-failed", failed_step: $step9.label, exit_code: $step9.exit_code, detail: $step9} | to json)
+        return {action: "build-failed", failed_step: $step9.label, exit_code: $step9.exit_code, detail: $step9}
     }
 
     # Step 10
@@ -187,7 +187,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Copy Linux kernel to boot partition as vmlinuz-kboot"
     } $dry_run
     if $step10.action == "failed" {
-        return ({action: "build-failed", failed_step: $step10.label, exit_code: $step10.exit_code, detail: $step10} | to json)
+        return {action: "build-failed", failed_step: $step10.label, exit_code: $step10.exit_code, detail: $step10}
     }
 
     # Step 11 — render step, no cmd, stays as-is
@@ -217,7 +217,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Execute kboot initrd build script — produces kboot.cpio.gz"
     } $dry_run
     if $step12.action == "failed" {
-        return ({action: "build-failed", failed_step: $step12.label, exit_code: $step12.exit_code, detail: $step12} | to json)
+        return {action: "build-failed", failed_step: $step12.label, exit_code: $step12.exit_code, detail: $step12}
     }
 
     # Step 13
@@ -229,7 +229,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Install kboot initrd to boot partition"
     } $dry_run
     if $step13.action == "failed" {
-        return ({action: "build-failed", failed_step: $step13.label, exit_code: $step13.exit_code, detail: $step13} | to json)
+        return {action: "build-failed", failed_step: $step13.label, exit_code: $step13.exit_code, detail: $step13}
     }
 
     # Step 14
@@ -245,7 +245,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         ]
     } $dry_run
     if $step14.action == "failed" {
-        return ({action: "build-failed", failed_step: $step14.label, exit_code: $step14.exit_code, detail: $step14} | to json)
+        return {action: "build-failed", failed_step: $step14.label, exit_code: $step14.exit_code, detail: $step14}
     }
 
     # Step 15
@@ -257,7 +257,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Mount UFS2 root partition"
     } $dry_run
     if $step15.action == "failed" {
-        return ({action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15} | to json)
+        return {action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15}
     }
 
     let os_ver = $manifest.target?.os_version? | default "15.0-RELEASE"
@@ -276,7 +276,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         ]
     } $dry_run
     if $step16.action == "failed" {
-        return ({action: "build-failed", failed_step: $step16.label, exit_code: $step16.exit_code, detail: $step16} | to json)
+        return {action: "build-failed", failed_step: $step16.label, exit_code: $step16.exit_code, detail: $step16}
     }
 
     # Step 17 — render step, no cmd, stays as-is
@@ -306,7 +306,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         ]
     } $dry_run
     if $step18.action == "failed" {
-        return ({action: "build-failed", failed_step: $step18.label, exit_code: $step18.exit_code, detail: $step18} | to json)
+        return {action: "build-failed", failed_step: $step18.label, exit_code: $step18.exit_code, detail: $step18}
     }
 
     # Step 19
@@ -318,7 +318,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Unmount all partitions after configuration"
     } $dry_run
     if $step19.action == "failed" {
-        return ({action: "build-failed", failed_step: $step19.label, exit_code: $step19.exit_code, detail: $step19} | to json)
+        return {action: "build-failed", failed_step: $step19.label, exit_code: $step19.exit_code, detail: $step19}
     }
 
     # Step 20 — real step, unconditional logic, stays as-is
@@ -389,5 +389,5 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         }
     }
 
-    $plan | to json
+    $plan
 }

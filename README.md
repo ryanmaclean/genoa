@@ -24,7 +24,7 @@ nu genoa.nu describe examples/freebsd-vultr-aarch64.toml
 nu genoa.nu build examples/freebsd-vultr-aarch64.toml --profile uefi
 ```
 
-- `describe` parses the manifest, validates against schema, prints a plan JSON with build steps.
+- `describe` parses the manifest and prints a structured summary of all sections and their resolved values.
 - `build` executes the profile (uefi / kboot), emits image + receipt with attestation.
 - Optional `--dry-run` shows what would happen without actually building.
 
@@ -33,7 +33,7 @@ nu genoa.nu build examples/freebsd-vultr-aarch64.toml --profile uefi
 ```nushell
 genoa catalog                            # List providers from catalog/providers.v1.json
 genoa schema                             # Print manifest schema (JSON Schema)
-genoa describe <manifest.toml>           # Parse + validate, print plan JSON
+genoa describe <manifest.toml>           # Parse manifest, print structured section summary
 genoa validate <manifest.toml>           # Validate manifest against schema, return check results
 genoa build <manifest.toml> [--profile uefi|kboot] [--dry-run]
 genoa publish <image> [--backend r2|s3|gitea]
@@ -42,7 +42,7 @@ genoa verify <image> <receipt.json>
 genoa run <manifest.toml> [--provider <id>] [--backend r2|s3|gitea] [--dry-run]
 ```
 
-`run` is the end-to-end pipeline: build → publish → deploy, returning a combined JSON result.
+`run` is the end-to-end pipeline: validate → build → publish → deploy, returning a combined JSON result.
 
 ## Core concepts
 

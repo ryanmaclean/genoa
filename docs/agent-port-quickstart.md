@@ -186,12 +186,13 @@ On success the command returns a JSON object:
 nu genoa.nu run your-agent.toml
 ```
 
-Chains validate → build → deploy in a single command. Aborts on the first
-failure and prints the step that failed as a JSON error object. Equivalent to:
+Chains validate → build → publish → deploy in a single command. Aborts on the
+first failure and prints the step that failed as a JSON error object. Equivalent to:
 
 ```
 nu genoa.nu validate your-agent.toml &&
 nu genoa.nu build   your-agent.toml &&
+nu genoa.nu publish your-agent.toml &&
 nu genoa.nu deploy  your-agent.toml
 ```
 

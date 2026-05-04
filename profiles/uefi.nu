@@ -146,20 +146,39 @@ def emit_receipt [manifest: record, dry_run: bool] {
 
     let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
     let sha256 = if (not $dry_run) and $is_freebsd and ($image_path | path exists) {
-        try { ^sha256 -q $image_path | str trim } catch { "sha256-error" }
+        try { ^sha256 -q $image_path | str trim } catch { "PLACEHOLDER_DRY_RUN" }
     } else {
-        "dry-run-placeholder"
+        "PLACEHOLDER_DRY_RUN"
     }
 
     {
-        schema_version: "1"
+        schema_version: "v1"
         receipt_id: (random uuid)
-        image_path: $image_path
-        image_sha256: $sha256
-        manifest_sha256: ($manifest | to json | hash sha256)
         built_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-        profile: "uefi"
-        placeholder: ($sha256 == "dry-run-placeholder")
+        image: {
+            name: ($manifest | get image? | get name? | default "unknown")
+            version: ($manifest | get image? | get version? | default "v0.0.0")
+            format: ($manifest | get image? | get format? | default "raw")
+            output_path: $image_path
+        }
+        build: {
+            host: (try { ^uname -n | str trim } catch { "unknown" })
+            builder_type: "dry-run"
+            os_version: ($manifest | get target? | get os_version? | default "unknown")
+            arch: ($manifest | get target? | get arch? | default "unknown")
+            genoa_version: "v0.1.0"
+            dry_run: $dry_run
+        }
+        agent: {
+            name: ($manifest | get agent? | get name? | default "unknown")
+            version: ($manifest | get agent? | get version? | default "v0.0.0")
+            install_path: ($manifest | get agent? | get install_path? | default "/usr/local/bin/agent")
+        }
+        hashes: {
+            image_sha256: $sha256
+            manifest_sha256: ($manifest | to json | hash sha256)
+        }
+        claims: []
     }
 }
 
@@ -184,6 +203,28 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     let authorized_keys_path = $"/tmp/genoa-authorized-keys-($manifest | get image? | get name? | default 'unknown')"
     if ($ssh_keys | length) > 0 {
         $ssh_keys | str join "\n" | save --force $authorized_keys_path
+    }
+
+    # ── step 13b: install authorized_keys into image (would-run) ───────────
+    let ssh_keys_tmp = $authorized_keys_path
+    let step13b = if ($ssh_keys | length) > 0 {
+        run_step {
+            step: "13b"
+            label: "install_ssh_keys"
+            action: "would-run"
+            cmd: $"mkdir -p /mnt/rootfs/root/.ssh && cp ($ssh_keys_tmp) /mnt/rootfs/root/.ssh/authorized_keys && chmod 600 /mnt/rootfs/root/.ssh/authorized_keys && chmod 700 /mnt/rootfs/root/.ssh"
+            description: $"Install SSH authorized_keys from manifest network.ssh_keys \(($ssh_keys | length) keys\)."
+        } $dry_run
+    } else {
+        {
+            step: "13b"
+            label: "install_ssh_keys"
+            action: "skipped"
+            description: "No ssh_keys in manifest; authorized_keys not installed."
+        }
+    }
+    if ($step13b | get action? | default "") == "failed" {
+        return {action: "build-failed", failed_step: $step13b.label, exit_code: $step13b.exit_code, detail: $step13b}
     }
 
     # Arch-dependent EFI filename
@@ -450,6 +491,9 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
                     "No ssh_keys in manifest; authorized_keys not written."
                 })
             }
+
+            # ── 13b. install_ssh_keys ──────────────────────────────────────────
+            $step13b
 
             # ── 14. cloud_init_clean ──────────────────────────────────────────
             $step14

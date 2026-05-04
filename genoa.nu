@@ -105,16 +105,43 @@ def "main build" [
   }
 
   # Write receipt file
+  let image_sha256 = if $dry_run { "PLACEHOLDER_DRY_RUN" } else {
+    let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
+    if $is_freebsd and ($image_path | path exists) {
+      try { ^sha256 -q $image_path | str trim } catch { "PLACEHOLDER_DRY_RUN" }
+    } else {
+      "PLACEHOLDER_DRY_RUN"
+    }
+  }
+  let manifest_sha256 = ($manifest_content | to json | hash sha256)
   let receipt = {
-    schema_version: "1"
+    schema_version: "v1"
     receipt_id: (random uuid)
-    image_path: $image_path
-    image_sha256: "dry-run-placeholder"
-    manifest_path: $manifest_file
-    manifest_sha256: ($manifest_content | to json | hash sha256)
-    profile: $p
     built_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-    dry_run: $dry_run
+    image: {
+      name: ($m.image?.name? | default "unknown")
+      version: ($m.image?.version? | default "v0.0.0")
+      format: ($m.image?.format? | default "raw")
+      output_path: $image_path
+    }
+    build: {
+      host: (try { ^uname -n | str trim } catch { "unknown" })
+      builder_type: "dry-run"
+      os_version: ($m.target?.os_version? | default "unknown")
+      arch: ($m.target?.arch? | default "unknown")
+      genoa_version: "v0.1.0"
+      dry_run: $dry_run
+    }
+    agent: {
+      name: ($m.agent?.name? | default "unknown")
+      version: ($m.agent?.version? | default "v0.0.0")
+      install_path: ($m.agent?.install_path? | default "/usr/local/bin/agent")
+    }
+    hashes: {
+      image_sha256: $image_sha256
+      manifest_sha256: $manifest_sha256
+    }
+    claims: []
   }
 
   $receipt | save --force $receipt_path
@@ -560,12 +587,18 @@ def "main run" [
   --backend: string = "r2"
   --dry-run
 ] {
+  # Step 0: validate — abort if manifest is invalid
+  let validate_result = main validate $manifest_file
+  if not $validate_result.valid {
+    return {action: "failed", step: "validate", errors: $validate_result.errors}
+  }
   # 1. build
   let build_result = (main build $manifest_file --dry-run=$dry_run)
   # 2. publish (uses receipt from build)
   let receipt_path = ($build_result | get receipt_path? | default "")
   let image_path = if $receipt_path != "" and ($receipt_path | path exists) {
-    (open $receipt_path).image_path
+    let r = open $receipt_path
+    $r.image?.output_path? | default ($r.image_path? | default "/tmp/genoa.raw")
   } else { "/tmp/genoa.raw" }
   let pub_result = (main publish $image_path --backend $backend --dry-run=$dry_run)
   # Extract published URL from pub_result
@@ -591,7 +624,7 @@ def main [] {
   print ""
   print "Commands: catalog  schema  describe  validate  build  deploy  publish  verify  run  status"
   print "Usage:    nu genoa.nu <command> [args]"
-  print "Example:  nu genoa.nu catalog | jq '.[\"providers\"][0]'"
+  print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }
 
 # --- legacy bare defs (keep for source-import compatibility) ---

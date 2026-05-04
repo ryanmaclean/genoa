@@ -256,6 +256,11 @@
         "hostname": {
           "type": "string",
           "default": "smolbsd"
+        },
+        "ssh_keys": {
+          "type": "array",
+          "description": "SSH public keys to install as root's authorized_keys in the image.",
+          "items": { "type": "string" }
         }
       }
     },

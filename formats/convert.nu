@@ -167,9 +167,9 @@ export def convert_to_gcstar [input: string, output: string, dry_run: bool = fal
   }
 
   try {
-    cp $input $disk_name
-    tar -czvf $output -C $tmp_dir disk.raw
-    rm $disk_name
+    ^cp $input $disk_name
+    ^tar -czvf $output -C $tmp_dir disk.raw
+    ^rm $disk_name
     return {
       action: "completed"
       format: "gce-tar"
