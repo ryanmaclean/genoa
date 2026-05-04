@@ -184,6 +184,23 @@ def validate_manifest [manifest: record] {
         $errors = ($errors | append $"base.filesystem '($manifest.base.filesystem)' must be one of: ($valid_fs | str join ', ')")
     }
 
+    # base.mode validation
+    let mode = if ("mode" in $manifest.base) { $manifest.base.mode } else { "mfsbsd" }
+    let valid_modes = ["mfsbsd", "custom_image"]
+    if not ($mode in $valid_modes) {
+        $errors = ($errors | append $"base.mode '($mode)' must be one of: ($valid_modes | str join ', ')")
+    }
+    if $mode == "custom_image" {
+        if not ("custom_image_url" in $manifest.base) or ($manifest.base.custom_image_url | str length) == 0 {
+            $errors = ($errors | append "base.custom_image_url is required and must be non-empty when base.mode=custom_image")
+        }
+        if not ("custom_image_sha256" in $manifest.base) {
+            $errors = ($errors | append "base.custom_image_sha256 is required when base.mode=custom_image")
+        } else if not ($manifest.base.custom_image_sha256 =~ '^[0-9a-f]{64}$') {
+            $errors = ($errors | append $"base.custom_image_sha256 must be exactly 64 hex chars, got: '($manifest.base.custom_image_sha256)'")
+        }
+    }
+
     # SHA256 format check
     if not ($manifest.trust.mfs_image_sha256 =~ '^[0-9a-f]{64}$') {
         $errors = ($errors | append $"trust.mfs_image_sha256 must be 64 hex chars, got: '($manifest.trust.mfs_image_sha256)'")
@@ -263,8 +280,112 @@ def derive_qemu_params [manifest: record] {
     }
 }
 
+# Render bootstrap.sh for custom_image mode (dd raw image path)
+# Uses str replace substitution to avoid Nushell $"..." subexpression conflicts
+def render_bootstrap_custom_image [manifest: record, qemu: record] {
+    let image_url     = $manifest.base.custom_image_url
+    let image_sha256  = $manifest.base.custom_image_sha256
+    let target_disk   = $qemu.qemu_target_disk
+    let hostname      = $manifest.network.hostname
+    let callback_url  = if ("callback_url" in $manifest.trust) { $manifest.trust.callback_url } else { "" }
+    let imds_endpoint = get_imds_endpoint $manifest.target.provider
+    let built_at      = (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+
+    # Raw bash template — no Nushell interpolation inside, only {{ token }} markers
+    let tmpl = '#!/usr/bin/env bash
+# SPDX-License-Identifier: BSD-2-Clause
+# lsd-generated bootstrap.sh -- custom_image mode
+# Built at: {{ built_at }}
+# Manifest: lsd.toml
+# Mode: custom_image -- dd raw image, no QEMU, no bsdinstall
+set -euo pipefail
+
+CUSTOM_IMAGE_MODE=1
+IMAGE_URL="{{ image_url }}"
+IMAGE_SHA256="{{ image_sha256 }}"
+TARGET_DISK="{{ target_disk }}"
+BSD_HOSTNAME="{{ hostname }}"
+IMDS_ENDPOINT="{{ imds_endpoint }}"
+CALLBACK_URL="{{ callback_url }}"
+
+log() { echo "[lsd] $*"; }
+die() { echo "[lsd] FATAL: $*" >&2; exit 1; }
+
+fetch_and_verify_image() {
+    log "Fetching image from: $IMAGE_URL"
+    if [[ "$IMAGE_URL" == file://* ]]; then
+        local local_path="${IMAGE_URL#file://}"
+        [[ -f "$local_path" ]] || die "local image not found: $local_path"
+        log "Copying local image: $local_path -> /tmp/genoa.img"
+        cp "$local_path" /tmp/genoa.img
+    else
+        curl -fSL -o /tmp/genoa.img "$IMAGE_URL" || die "curl failed for: $IMAGE_URL"
+    fi
+    log "Verifying sha256 of /tmp/genoa.img"
+    if command -v sha256sum >/dev/null 2>&1; then
+        echo "$IMAGE_SHA256  /tmp/genoa.img" | sha256sum -c - || die "sha256 mismatch for genoa.img"
+    elif command -v sha256 >/dev/null 2>&1; then
+        local actual
+        actual=$(sha256 -q /tmp/genoa.img)
+        [[ "$actual" == "$IMAGE_SHA256" ]] || die "sha256 mismatch: expected $IMAGE_SHA256 got $actual"
+    else
+        die "no sha256sum or sha256 found -- cannot verify image integrity"
+    fi
+    log "Image verified OK"
+}
+
+write_image_to_disk() {
+    log "Writing /tmp/genoa.img -> $TARGET_DISK via dd bs=8M conv=fdatasync"
+    dd if=/tmp/genoa.img of="$TARGET_DISK" bs=8M conv=fdatasync status=progress || die "dd failed writing to $TARGET_DISK"
+    sync
+    log "Image written and synced to disk"
+}
+
+run_callback() {
+    if [[ -n "$CALLBACK_URL" ]]; then
+        log "POSTing completion callback to $CALLBACK_URL"
+        curl -fsSL -X POST -H "Content-Type: application/json" \
+            -d "{\"status\":\"complete\",\"mode\":\"custom_image\",\"host\":\"$BSD_HOSTNAME\"}" \
+            "$CALLBACK_URL" || log "WARNING: callback POST failed, non-fatal"
+    fi
+}
+
+main() {
+    log "lsd custom_image bootstrap starting"
+    log "Target disk : $TARGET_DISK"
+    log "Image URL   : $IMAGE_URL"
+    log "SHA-256     : $IMAGE_SHA256"
+
+    fetch_and_verify_image
+    write_image_to_disk
+    run_callback
+
+    log "Done. Rebooting into installed BSD image..."
+    sync
+    reboot
+}
+
+main "$@"
+'
+
+    $tmpl
+    | str replace --all "{{ built_at }}"      $built_at
+    | str replace --all "{{ image_url }}"     $image_url
+    | str replace --all "{{ image_sha256 }}"  $image_sha256
+    | str replace --all "{{ target_disk }}"   $target_disk
+    | str replace --all "{{ hostname }}"      $hostname
+    | str replace --all "{{ imds_endpoint }}" $imds_endpoint
+    | str replace --all "{{ callback_url }}"  $callback_url
+}
+
 # Render the bootstrap.sh from the template
 def render_bootstrap [manifest: record, qemu: record] {
+    let mode = if ("mode" in $manifest.base) { $manifest.base.mode } else { "mfsbsd" }
+
+    if $mode == "custom_image" {
+        return (render_bootstrap_custom_image $manifest $qemu)
+    }
+
     let template_path = ([$env.FILE_PWD, "templates", "bootstrap.sh.tera"] | path join)
     let template = if ($template_path | path exists) {
         open --raw $template_path
@@ -301,6 +422,11 @@ def render_bootstrap [manifest: record, qemu: record] {
 
 # Render the bsdinstall script from the template
 def render_bsdinstall [manifest: record, qemu: record] {
+    let mode = if ("mode" in $manifest.base) { $manifest.base.mode } else { "mfsbsd" }
+    if $mode == "custom_image" {
+        return ""
+    }
+
     let template_path = ([$env.FILE_PWD, "templates", "bsdinstall.script.tera"] | path join)
     let template = if ($template_path | path exists) {
         open --raw $template_path
@@ -350,6 +476,8 @@ def "main describe" [manifest_path: string] {
     let validation = validate_manifest $manifest
     let qemu = derive_qemu_params $manifest
 
+    let mode = if ("mode" in $manifest.base) { $manifest.base.mode } else { "mfsbsd" }
+
     let mfsbsd_url = if ("mfsbsd_url" in $manifest.base) {
         $manifest.base.mfsbsd_url
     } else {
@@ -359,8 +487,66 @@ def "main describe" [manifest_path: string] {
     let provider_info = lookup_provider $manifest.target.provider
     let imds_endpoint = get_imds_endpoint $manifest.target.provider
 
+    # Build installer block — differs by mode
+    let installer = if $mode == "custom_image" {
+        {
+            install_method: "dd-raw-image"
+            mfsbsd_url: null
+            mfsbsd_sha256_expected: null
+            sha256_is_placeholder: false
+            provenance_url: (if ("provenance_url" in $manifest.trust) { $manifest.trust.provenance_url } else { null })
+        }
+    } else {
+        {
+            install_method: "bsdinstall"
+            mfsbsd_url: ($mfsbsd_url | default "not found in catalog")
+            mfsbsd_sha256_expected: $manifest.trust.mfs_image_sha256
+            sha256_is_placeholder: ($manifest.trust.mfs_image_sha256 == "0000000000000000000000000000000000000000000000000000000000000000")
+            provenance_url: (if ("provenance_url" in $manifest.trust) { $manifest.trust.provenance_url } else { null })
+        }
+    }
+
+    # custom_image section — only present when mode=custom_image
+    let custom_image_section = if $mode == "custom_image" {
+        let raw_sha = if ("custom_image_sha256" in $manifest.base) { $manifest.base.custom_image_sha256 } else { "" }
+        let sha_display = if ($raw_sha | str length) >= 16 { $"($raw_sha | str substring 0..16)..." } else { $raw_sha }
+        let img_url = if ("custom_image_url" in $manifest.base) { $manifest.base.custom_image_url } else { "" }
+        {
+            mode: "custom_image"
+            image_url: $img_url
+            image_sha256: $sha_display
+            install_method: "dd-raw-image"
+        }
+    } else {
+        null
+    }
+
+    # next_steps differ by mode
+    let next_steps = if $validation.valid {
+        if $mode == "custom_image" {
+            [
+                $"1. Activate rescue boot for '($manifest.target.plan)' in ($manifest.target.provider) console/API"
+                "2. SSH into rescue environment"
+                $"3. Run: lsd build ($manifest_path) --out ./out && scp out/bootstrap.sh rescue-host:/tmp/"
+                "4. On the rescue host: bash /tmp/bootstrap.sh"
+                "5. bootstrap.sh fetches the raw image, dd-writes it to disk, then reboots"
+                "6. Server will boot directly into the installed BSD image (no QEMU, no bsdinstall)"
+            ]
+        } else {
+            [
+                $"1. Activate rescue boot for '($manifest.target.plan)' in ($manifest.target.provider) console/API"
+                "2. SSH into rescue environment"
+                $"3. Run: curl -fsSL <bootstrap-url> | bash  -- alt: lsd build ($manifest_path) --out ./out, scp out/bootstrap.sh rescue-host:/tmp/"
+                "4. Wait for QEMU to complete BSD install (~15-45 min depending on ISO download speed)"
+                "5. Hard-reboot the server — it will boot into FreeBSD"
+            ]
+        }
+    } else {
+        ["Fix validation errors before building"]
+    }
+
     # Build the describe output
-    {
+    mut out = {
         schema_version: $SCHEMA_VERSION
         tool: "lsd"
         tool_version: $LSD_VERSION
@@ -381,13 +567,9 @@ def "main describe" [manifest_path: string] {
             filesystem: $manifest.base.filesystem
             hostname: $manifest.network.hostname
             ipv6: (if ("ipv6" in $manifest.network) { $manifest.network.ipv6 } else { false })
+            mode: $mode
         }
-        installer: {
-            mfsbsd_url: ($mfsbsd_url | default "not found in catalog")
-            mfsbsd_sha256_expected: $manifest.trust.mfs_image_sha256
-            sha256_is_placeholder: ($manifest.trust.mfs_image_sha256 == "0000000000000000000000000000000000000000000000000000000000000000")
-            provenance_url: (if ("provenance_url" in $manifest.trust) { $manifest.trust.provenance_url } else { null })
-        }
+        installer: $installer
         qemu: $qemu
         imds: {
             endpoint: $imds_endpoint
@@ -397,18 +579,14 @@ def "main describe" [manifest_path: string] {
                 if ($base_matches | length) == 0 { [] } else { ($base_matches | first).notes }
             })
         }
-        next_steps: (if $validation.valid {
-            [
-                $"1. Activate rescue boot for '($manifest.target.plan)' in ($manifest.target.provider) console/API"
-                "2. SSH into rescue environment"
-                $"3. Run: curl -fsSL <bootstrap-url> | bash  -- alt: lsd build ($manifest_path) --out ./out, scp out/bootstrap.sh rescue-host:/tmp/"
-                "4. Wait for QEMU to complete BSD install (~15-45 min depending on ISO download speed)"
-                "5. Hard-reboot the server — it will boot into FreeBSD"
-            ]
-        } else {
-            ["Fix validation errors before building"]
-        })
-    } | to json
+        next_steps: $next_steps
+    }
+
+    if $custom_image_section != null {
+        $out = ($out | insert custom_image $custom_image_section)
+    }
+
+    $out | to json
 }
 
 # Build: render bootstrap.sh and bsdinstall.script, write receipt

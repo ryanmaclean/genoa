@@ -194,7 +194,7 @@ def validate_manifest [doc: record] {
   # capabilities (optional but must conform if present)
   let caps = ($doc | get -o capabilities | default [])
   for i in (0..($caps | length | $in - 1)) {
-    if $i < ($caps | length) {
+    if $i >= 0 and $i < ($caps | length) {
       let cap = ($caps | get $i)
       let cap_result = (validate_capability $cap)
       for err in $cap_result.errors {

@@ -66,6 +66,21 @@
           "type": "string",
           "format": "uri",
           "description": "Override the mfsBSD ISO URL (optional; catalog default used if absent)"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["mfsbsd", "custom_image"],
+          "default": "mfsbsd",
+          "description": "Install mode. mfsbsd uses bsdinstall from mfsBSD rescue ISO; custom_image dd-writes a pre-built raw image."
+        },
+        "custom_image_url": {
+          "type": "string",
+          "description": "URL (https://) or local path (file://) to a pre-built raw disk image. Required when mode=custom_image."
+        },
+        "custom_image_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 hex digest of the custom_image_url content. Required when mode=custom_image."
         }
       }
     },
