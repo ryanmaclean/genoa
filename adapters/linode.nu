@@ -23,14 +23,9 @@ export def linode_deploy [
     }
   }
 
-  let image_sha256 = if ($nu.os-info.name == "macos") {
-    (^shasum -a 256 $image_path | str trim | split column " " | get column1.0)
-  } else {
-    (^sha256sum $image_path | str trim | split column " " | get column1.0)
-  }
-
   # Dry-run: return the existing would-run plan unchanged
   if $dry_run {
+    let image_sha256 = "dry-run-placeholder"
     let steps = [
       {
         step: 1
@@ -161,9 +156,16 @@ export def linode_deploy [
     return {action: "failed", reason: "LINODE_TOKEN not set", provider: "linode"}
   }
 
+  # Compute sha256 of the image (live path only)
+  let image_sha256 = if ($nu.os-info.name == "macos") {
+    (^shasum -a 256 $image_path | str trim | split column " " | get column1.0)
+  } else {
+    (^sha256sum $image_path | str trim | split column " " | get column1.0)
+  }
+
   # Step 1 — create Linode instance (raw unformatted disk)
   let create_result = try {
-    ^$linode_cli linodes create --type $plan --region $region --image "" --root-pass "rescue-only" --json | from json
+    ^$linode_cli linodes create --type $plan --region $region --no-image --json | from json
   } catch { |e| return {action: "failed", step: "create_linode", error: $e.msg} }
 
   let linode_id = $create_result | get 0?.id? | default null
@@ -171,10 +173,20 @@ export def linode_deploy [
     return {action: "failed", step: "create_linode", detail: $create_result}
   }
 
-  # Step 2 — boot into rescue mode
-  let rescue_result = try {
-    ^$linode_cli linodes rescue $linode_id --json | from json
-  } catch { |e| return {action: "failed", step: "rescue_boot", linode_id: $linode_id, error: $e.msg} }
+  # Step 2a — get the disk ID for the raw disk
+  let disks_result = try {
+    ^$linode_cli linodes disks-list $linode_id --json | from json
+  } catch { |e| return {action: "failed", step: "list_disks", linode_id: $linode_id, error: $e.msg} }
+  let disk_id = $disks_result | get 0?.id? | default null
+  if $disk_id == null {
+    return {action: "failed", step: "list_disks", reason: "no disks found on new Linode", detail: $disks_result}
+  }
+
+  # Step 2b — boot into rescue mode
+  let rescue_result = (^$linode_cli linodes rescue $linode_id $"--devices.sda.disk_id=($disk_id)" --json | complete)
+  if $rescue_result.exit_code != 0 {
+    return {action: "failed", step: "rescue_boot", linode_id: $linode_id, error: $rescue_result.stderr}
+  }
 
   # Step 3 — wait for rescue mode (poll status, max 20 attempts × 15s = 5 min)
   mut status = "provisioning"

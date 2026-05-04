@@ -19,9 +19,9 @@ export def convert_to_qcow2 [input: string, output: string, dry_run: bool = fals
 
   if $qemu_img == null {
     return {
-      action: "stub"
-      reason: "qemu-img not found — install qemu"
-      suggestion: "brew install qemu"
+      action: "failed"
+      reason: "qemu-img not found"
+      suggestion: "brew install qemu  # or: pkg install qemu on FreeBSD"
     }
   }
 
@@ -60,9 +60,9 @@ export def convert_to_vhd [input: string, output: string, dry_run: bool = false]
 
   if $qemu_img == null {
     return {
-      action: "stub"
-      reason: "qemu-img not found — install qemu"
-      suggestion: "brew install qemu"
+      action: "failed"
+      reason: "qemu-img not found"
+      suggestion: "brew install qemu  # or: pkg install qemu on FreeBSD"
     }
   }
 
@@ -104,9 +104,9 @@ export def convert_to_vmdk [input: string, output: string, dry_run: bool = false
 
   if $qemu_img == null {
     return {
-      action: "stub"
-      reason: "qemu-img not found — install qemu"
-      suggestion: "brew install qemu"
+      action: "failed"
+      reason: "qemu-img not found"
+      suggestion: "brew install qemu  # or: pkg install qemu on FreeBSD"
     }
   }
 

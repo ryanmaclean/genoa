@@ -166,9 +166,12 @@ export def oci_deploy [
   let bucket = $manifest.deploy?.oci_bucket? | default "genoa-images"
   let object_name = ($qcow2_path | path basename)
 
-  let upload_result = try {
-    ^$oci_cli os object put --namespace $namespace --bucket-name $bucket --file $qcow2_path --name $object_name | from json
+  let upload_out = try {
+    ^$oci_cli os object put --namespace $namespace --bucket-name $bucket --file $qcow2_path --name $object_name | complete
   } catch { |e| return {action: "failed", step: "upload_image", error: $e.msg} }
+  if $upload_out.exit_code != 0 {
+    return {action: "failed", step: "upload_image", exit_code: $upload_out.exit_code, stderr: $upload_out.stderr}
+  }
 
   # ── Step 3 — import as Custom Image ───────────────────────────────────────
   let compartment_id = $manifest.deploy?.oci_compartment_id? | default ""
@@ -177,8 +180,13 @@ export def oci_deploy [
   }
   let image_name = $manifest.image?.name? | default "genoa-freebsd"
 
+  let os_raw = $manifest.target?.os? | default "freebsd"
+  let os_display = if $os_raw == "netbsd" { "NetBSD" } else { "FreeBSD" }
+  let os_version_raw = $manifest.target?.os_version? | default "15"
+  let os_version_short = $os_version_raw | split row "." | first
+
   let import_result = try {
-    ^$oci_cli compute image import from-object --namespace $namespace --bucket-name $bucket --name $object_name --compartment-id $compartment_id --display-name $image_name --source-image-type QCOW2 | from json
+    ^$oci_cli compute image import from-object --namespace $namespace --bucket-name $bucket --name $object_name --compartment-id $compartment_id --display-name $image_name --source-image-type QCOW2 --operating-system $os_display --operating-system-version $os_version_short | from json
   } catch { |e| return {action: "failed", step: "import_image", error: $e.msg} }
 
   let image_id = $import_result.data?.id? | default null
@@ -207,6 +215,10 @@ export def oci_deploy [
   }
 
   # ── Step 5 — launch instance ───────────────────────────────────────────────
+  let av_domain = $manifest.deploy?.oci_availability_domain? | default ""
+  if $av_domain == "" {
+    return {action: "failed", reason: "deploy.oci_availability_domain required for OCI instance launch (e.g. 'Uocm:US-ASHBURN-AD-1')", provider: "oci"}
+  }
   let subnet_id = $manifest.deploy?.oci_subnet_id? | default ""
   if $subnet_id == "" {
     return {action: "failed", reason: "deploy.oci_subnet_id required", provider: "oci"}
@@ -214,7 +226,7 @@ export def oci_deploy [
   let shape = $manifest.deploy?.oci_shape? | default "VM.Standard.A1.Flex"
 
   let launch_result = try {
-    ^$oci_cli compute instance launch --compartment-id $compartment_id --image-id $image_id --shape $shape --subnet-id $subnet_id --display-name $image_name | from json
+    ^$oci_cli compute instance launch --compartment-id $compartment_id --image-id $image_id --shape $shape --subnet-id $subnet_id --display-name $image_name --availability-domain $av_domain | from json
   } catch { |e| return {action: "failed", step: "launch_instance", error: $e.msg} }
 
   # ── Success ────────────────────────────────────────────────────────────────

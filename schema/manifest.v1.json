@@ -277,6 +277,32 @@
         "path_override": {
           "type": "string",
           "description": "Optional override of the deployment_path from catalog. Use only if catalog entry is incomplete or needs adjustment."
+        },
+        "oci_availability_domain": {
+          "type": "string",
+          "description": "OCI availability domain for instance launch. Required for OCI provider. Example: 'Uocm:US-ASHBURN-AD-1'."
+        },
+        "oci_namespace": {
+          "type": "string",
+          "description": "OCI Object Storage namespace. Required for OCI provider."
+        },
+        "oci_bucket": {
+          "type": "string",
+          "description": "OCI Object Storage bucket name. Defaults to 'genoa-images'.",
+          "default": "genoa-images"
+        },
+        "oci_compartment_id": {
+          "type": "string",
+          "description": "OCI compartment OCID. Required for OCI image import and instance launch."
+        },
+        "oci_subnet_id": {
+          "type": "string",
+          "description": "OCI subnet OCID for instance launch. Required for OCI provider."
+        },
+        "oci_shape": {
+          "type": "string",
+          "description": "OCI compute shape. Defaults to 'VM.Standard.A1.Flex' (free tier ARM).",
+          "default": "VM.Standard.A1.Flex"
         }
       }
     },

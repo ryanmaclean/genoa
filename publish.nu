@@ -59,6 +59,11 @@ export def file_sha256 [path: string]: nothing -> string {
 def publish_r2 [image_path: string, dry_run: bool] {
   let bucket   = if ("GENOA_R2_BUCKET" in $env) { $env.GENOA_R2_BUCKET } else { "genoa-images" }
   let acct_id  = if ("CLOUDFLARE_ACCOUNT_ID" in $env) { $env.CLOUDFLARE_ACCOUNT_ID } else { "" }
+
+  if $acct_id == "" {
+    return {action: "failed", reason: "CLOUDFLARE_ACCOUNT_ID not set", backend: "r2"}
+  }
+
   let endpoint = $"https://($acct_id).r2.cloudflarestorage.com"
   let filename = ($image_path | path basename)
   let key      = $"images/($filename)"
@@ -108,6 +113,11 @@ def publish_r2 [image_path: string, dry_run: bool] {
 
 def publish_s3 [image_path: string, dry_run: bool] {
   let bucket   = if ("GENOA_S3_BUCKET" in $env) { $env.GENOA_S3_BUCKET } else { "" }
+
+  if $bucket == "" {
+    return {action: "failed", reason: "GENOA_S3_BUCKET not set", backend: "s3"}
+  }
+
   let filename = ($image_path | path basename)
   let key      = $"images/($filename)"
   let s3_uri   = $"s3://($bucket)/($key)"
@@ -191,7 +201,7 @@ def publish_gitea [image_path: string, dry_run: bool] {
   let expires_at = (date now) + 7day
 
   run-external $tea "releases" "create" "--tag" $tag "--title" "genoa image"
-  run-external $tea "releases" "asset" "upload" "--tag" $tag $image_path
+  run-external $tea "releases" "assets" "upload" "--tag" $tag $image_path
 
   {
     url:        $url
@@ -286,7 +296,7 @@ export def publish_image [
 export def publish_catalog []: nothing -> list<record> {
   # --- r2 ---
   let r2_env_missing = (
-    ["CLOUDFLARE_ACCOUNT_ID" "R2_ACCESS_KEY_ID" "R2_SECRET_ACCESS_KEY"]
+    ["CLOUDFLARE_ACCOUNT_ID" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY"]
     | where { |v| not ($v in $env) }
   )
   let r2_tool_missing = if (find_tool "aws") == null { ["aws CLI"] } else { [] }

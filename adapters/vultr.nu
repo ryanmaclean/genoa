@@ -3,12 +3,20 @@
 # Path: publish image to HTTPS URL → POST /v2/snapshots/create-from-url → poll → create instance
 
 def check-vultr-cli [] {
-  if ($env.PATH | split row (char esep) | any { |p| ($p | path join "vultr-cli" | path exists) }) {
-    return "vultr-cli"
+  if ("/opt/homebrew/bin/vultr" | path exists) {
+    return "/opt/homebrew/bin/vultr"
   }
 
   if ("/opt/homebrew/bin/vultr-cli" | path exists) {
     return "/opt/homebrew/bin/vultr-cli"
+  }
+
+  if ($env.PATH | split row (char esep) | any { |p| ($p | path join "vultr" | path exists) }) {
+    return "vultr"
+  }
+
+  if ($env.PATH | split row (char esep) | any { |p| ($p | path join "vultr-cli" | path exists) }) {
+    return "vultr-cli"
   }
 
   null
@@ -57,7 +65,7 @@ export def vultr_deploy [
         {
           step: 1
           action: "would-run"
-          command: "vultr-cli snapshot create-from-url"
+          command: "vultr-cli snapshot create-url --url <url>"
           description: "Create snapshot from HTTPS URL"
           args: { url: $image_url_hint, description: $image_name }
         }
@@ -107,7 +115,7 @@ export def vultr_deploy [
 
   # --- Step 1: Create snapshot from URL ---
   let snap_result = try {
-    ^$vultr_cli snapshot create-from-url $image_url --description $image_name | from json
+    ^$vultr_cli snapshot create-url --url $image_url --description $image_name -o json | from json
   } catch { |e|
     return {action: "failed", step: "create_snapshot", error: $e.msg, provider: "vultr"}
   }
@@ -123,7 +131,7 @@ export def vultr_deploy [
   while $snap_status != "complete" and $poll_count < 60 {
     ^sleep 30sec
     let poll = try {
-      ^$vultr_cli snapshot get $snap_id | from json
+      ^$vultr_cli snapshot get $snap_id -o json | from json
     } catch {
       {snapshot: {status: "unknown"}}
     }
@@ -151,7 +159,7 @@ export def vultr_deploy [
 
   # --- Step 3: Create instance from snapshot ---
   let instance_result = try {
-    ^$vultr_cli instance create --region $region --plan $plan --snapshot $snap_id | from json
+    ^$vultr_cli instance create --region $region --plan $plan --snapshot $snap_id -o json | from json
   } catch { |e|
     return {
       action: "failed"

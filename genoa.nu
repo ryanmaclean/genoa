@@ -168,11 +168,11 @@ def "main deploy" [
   }
 
   if $path == "rescue-dd" {
-    source adapters/linode.nu; linode_deploy $m $image
+    source adapters/linode.nu; linode_deploy $m $image --dry-run=$dry_run
   } else if $path == "snapshot-url" {
-    source adapters/vultr.nu;  vultr_deploy  $m $image
+    source adapters/vultr.nu;  vultr_deploy  $m $image --dry-run=$dry_run
   } else {
-    source adapters/oci.nu;    oci_deploy    $m $image
+    source adapters/oci.nu;    oci_deploy    $m $image --dry-run=$dry_run
   }
 }
 
@@ -328,16 +328,31 @@ def "main verify" [image: string, receipt_file: string] {
 
   # 1. image_exists
   let image_ok = ($image | path exists)
-  $checks = ($checks | append {check: "image_exists", pass: $image_ok, detail: (if $image_ok { $"($image) exists" } else { $"image not found: ($image)" })})
-  if not $image_ok { $errors = ($errors | append $"image not found: ($image)") }
+  # Peek at receipt to detect dry-run before deciding how to treat a missing image
+  let receipt_ok_pre = ($receipt_file | path exists)
+  let is_dry_run_receipt = if $receipt_ok_pre {
+    (open $receipt_file).dry_run? | default false
+  } else { false }
+
+  let image_check = if $image_ok {
+    {check: "image_exists", pass: true, detail: $"($image) exists"}
+  } else if $is_dry_run_receipt {
+    {check: "image_exists", pass: true, detail: $"dry-run receipt — image not yet built: ($image)"}
+  } else {
+    {check: "image_exists", pass: false, detail: $"image not found: ($image)"}
+  }
+  $checks = ($checks | append $image_check)
+  if not $image_ok and not $is_dry_run_receipt {
+    $errors = ($errors | append $"image not found: ($image)")
+  }
 
   # 2. receipt_exists
-  let receipt_ok = ($receipt_file | path exists)
+  let receipt_ok = $receipt_ok_pre
   $checks = ($checks | append {check: "receipt_exists", pass: $receipt_ok, detail: (if $receipt_ok { $"($receipt_file) exists" } else { $"receipt not found: ($receipt_file)" })})
   if not $receipt_ok { $errors = ($errors | append $"receipt not found: ($receipt_file)") }
 
-  # Early return if either file is missing — nothing else can proceed
-  if not $image_ok or not $receipt_ok {
+  # Early return if receipt is missing, or image is missing and not a dry-run receipt
+  if not $receipt_ok or (not $image_ok and not $is_dry_run_receipt) {
     return {
       action: "verify"
       image: $image
@@ -387,24 +402,29 @@ def "main verify" [image: string, receipt_file: string] {
   if not $parse_ok { $errors = ($errors | append $parse_detail) }
 
   # 4. image_sha256_match — compute sha256 of the image file
-  let computed_image_sha256 = if $image_ok {
-    if $nu.os-info.name == "macos" {
-      ^shasum -a 256 $image | str trim | split row " " | first
-    } else {
-      ^sha256sum $image | str trim | split row " " | first
-    }
-  } else { "" }
-
-  let img_hash_ok = ($computed_image_sha256 == $image_sha256) and ($image_sha256 != "")
-  let img_hash_detail = if $image_sha256 == "" {
-    "skipped — receipt has no image_sha256"
-  } else if $img_hash_ok {
-    "sha256 matches receipt"
+  let img_sha256_check = if $image_sha256 == "dry-run-placeholder" {
+    {check: "image_sha256", pass: true, detail: "dry-run receipt — sha256 not computed; skipping"}
   } else {
-    $"MISMATCH: got ($computed_image_sha256) expected ($image_sha256)"
+    let computed_image_sha256 = if $image_ok {
+      if $nu.os-info.name == "macos" {
+        ^shasum -a 256 $image | str trim | split row " " | first
+      } else {
+        ^sha256sum $image | str trim | split row " " | first
+      }
+    } else { "" }
+
+    let img_hash_ok = ($computed_image_sha256 == $image_sha256) and ($image_sha256 != "")
+    let img_hash_detail = if $image_sha256 == "" {
+      "skipped — receipt has no image_sha256"
+    } else if $img_hash_ok {
+      "sha256 matches receipt"
+    } else {
+      $"MISMATCH: got ($computed_image_sha256) expected ($image_sha256)"
+    }
+    {check: "image_sha256", pass: $img_hash_ok, detail: $img_hash_detail}
   }
-  $checks = ($checks | append {check: "image_sha256", pass: $img_hash_ok, detail: $img_hash_detail})
-  if not $img_hash_ok { $errors = ($errors | append $img_hash_detail) }
+  $checks = ($checks | append $img_sha256_check)
+  if not $img_sha256_check.pass { $errors = ($errors | append $img_sha256_check.detail) }
 
   # 5. manifest_sha256_match — only if manifest_path is set and exists on disk
   let manifest_check = if $manifest_path == "" {
