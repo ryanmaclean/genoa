@@ -137,6 +137,143 @@ def "main deploy" [
   }
 }
 
+def "main validate" [manifest_file: string] {
+  mut checks = []
+  mut errors = []
+  mut warnings = []
+
+  # 1. file_exists
+  let file_ok = ($manifest_file | path exists)
+  $checks = ($checks | append {check: "file_exists", pass: $file_ok, detail: (if $file_ok { $"($manifest_file) is readable" } else { $"file not found: ($manifest_file)" })})
+  if not $file_ok {
+    $errors = ($errors | append $"file not found: ($manifest_file)")
+    return {
+      action: "validate"
+      manifest_path: $manifest_file
+      valid: false
+      checks: $checks
+      errors: $errors
+      warnings: $warnings
+    }
+  }
+
+  let m = open $manifest_file
+
+  # 2. schema_version
+  let sv = ($m.schema_version? | default "")
+  let sv_ok = ($sv == "v1")
+  $checks = ($checks | append {check: "schema_version", pass: $sv_ok, detail: (if $sv_ok { "v1" } else { $"expected v1, got: ($sv)" })})
+  if not $sv_ok { $errors = ($errors | append $"schema_version: expected v1, got: ($sv)") }
+
+  # 3. required_fields
+  let has_image  = ("image"  in $m)
+  let has_target = ("target" in $m)
+  let has_kernel = ("kernel" in $m)
+  let has_agent  = ("agent"  in $m)
+  let req_ok = ($has_image and $has_target and $has_kernel and $has_agent)
+  let missing_fields = (
+    []
+    | if not $has_image  { append "image"  } else { $in }
+    | if not $has_target { append "target" } else { $in }
+    | if not $has_kernel { append "kernel" } else { $in }
+    | if not $has_agent  { append "agent"  } else { $in }
+  )
+  $checks = ($checks | append {
+    check: "required_fields"
+    pass: $req_ok
+    detail: (if $req_ok { "image, target, kernel, agent present" } else { $"missing: ($missing_fields | str join ', ')" })
+  })
+  if not $req_ok { $errors = ($errors | append $"required_fields missing: ($missing_fields | str join ', ')") }
+
+  # 4. image_name_slug
+  let img_name = ($m.image?.name? | default "")
+  let slug_ok = ($img_name | str contains " " | not $in) and ($img_name =~ '^[a-z0-9][a-z0-9_-]*$')
+  $checks = ($checks | append {check: "image_name_slug", pass: $slug_ok, detail: (if $slug_ok { $img_name } else { $"'($img_name)' does not match ^[a-z0-9][a-z0-9_-]*$" })})
+  if not $slug_ok { $errors = ($errors | append $"image_name_slug: '($img_name)' is not a valid slug") }
+
+  # 5. image_format
+  let valid_formats = ["raw", "qcow2", "vmdk", "iso"]
+  let img_fmt = ($m.image?.format? | default "")
+  let fmt_ok = ($img_fmt in $valid_formats)
+  $checks = ($checks | append {check: "image_format", pass: $fmt_ok, detail: (if $fmt_ok { $img_fmt } else { $"'($img_fmt)' not in ($valid_formats | str join ', ')" })})
+  if not $fmt_ok { $errors = ($errors | append $"image_format: '($img_fmt)' not in [($valid_formats | str join ', ')]") }
+
+  # 6. target_arch
+  let valid_arches = ["amd64", "aarch64", "riscv64"]
+  let arch = ($m.target?.arch? | default "")
+  let arch_ok = ($arch in $valid_arches)
+  $checks = ($checks | append {check: "target_arch", pass: $arch_ok, detail: (if $arch_ok { $"($arch) in [($valid_arches | str join ', ')]" } else { $"'($arch)' not in [($valid_arches | str join ', ')]" })})
+  if not $arch_ok { $errors = ($errors | append $"target_arch: '($arch)' not in [($valid_arches | str join ', ')]") }
+
+  # 7. target_os
+  let valid_os = ["freebsd", "netbsd"]
+  let os = ($m.target?.os? | default "")
+  let os_ok = ($os in $valid_os)
+  $checks = ($checks | append {check: "target_os", pass: $os_ok, detail: (if $os_ok { $"($os) in [($valid_os | str join ', ')]" } else { $"'($os)' not in [($valid_os | str join ', ')]" })})
+  if not $os_ok { $errors = ($errors | append $"target_os: '($os)' not in [($valid_os | str join ', ')]") }
+
+  # 8. provider_in_catalog
+  let provider_id = ($m.deploy?.provider? | default "")
+  if $provider_id != "" {
+    let cat = open "catalog/providers.v1.json"
+    let matches = ($cat.providers | where id == $provider_id)
+    let provider_ok = (not ($matches | is-empty))
+    let detail = if $provider_ok {
+      let entry = ($matches | first)
+      let dp = ($entry.deployment_path? | default "unknown")
+      let byoi = ($entry.byoi_support? | default "unknown")
+      $"($provider_id) found, deployment_path=($dp), byoi_support=($byoi)"
+    } else {
+      $"'($provider_id)' not found in catalog"
+    }
+    $checks = ($checks | append {check: "provider_in_catalog", pass: $provider_ok, detail: $detail})
+    if not $provider_ok { $errors = ($errors | append $"provider_in_catalog: '($provider_id)' not in catalog") }
+  }
+
+  # 9. profile_supported
+  let profile = ($m.profile? | default "uefi")
+  let profile_file = $"profiles/($profile).nu"
+  let profile_ok = ($profile_file | path exists)
+  $checks = ($checks | append {check: "profile_supported", pass: $profile_ok, detail: (if $profile_ok { $"($profile) profile file exists" } else { $"($profile_file) not found" })})
+  if not $profile_ok { $errors = ($errors | append $"profile_supported: ($profile_file) does not exist") }
+
+  # 10. agent_source_type
+  let valid_src_types = ["gitea_release", "url", "local_path"]
+  let src_type = ($m.agent?.source?.type? | default "")
+  let src_type_ok = ($src_type in $valid_src_types)
+  $checks = ($checks | append {check: "agent_source_type", pass: $src_type_ok, detail: (if $src_type_ok { $"type=($src_type)" } else { $"'($src_type)' not in [($valid_src_types | str join ', ')]" })})
+  if not $src_type_ok { $errors = ($errors | append $"agent_source_type: '($src_type)' not in [($valid_src_types | str join ', ')]") }
+
+  # 11. agent_sha256_real
+  let sha256 = ($m.agent?.source?.sha256? | default "")
+  if $sha256 != "" {
+    let all_zeros = ($sha256 | str replace --all "0" "" | str length) == 0
+    let sha_pass = (not $all_zeros)
+    let sha_detail = if $sha_pass {
+      $"sha256 present (($sha256 | str substring 0..8)...)"
+    } else {
+      "sha256 is all-zeros placeholder — replace before production build"
+    }
+    $checks = ($checks | append {check: "agent_sha256_real", pass: $sha_pass, detail: $sha_detail})
+    if not $sha_pass { $warnings = ($warnings | append "agent_sha256_real: sha256 is all-zeros placeholder — replace before production build") }
+  }
+
+  # 12. agent_version_semver
+  let agent_ver = ($m.agent?.version? | default "")
+  let semver_ok = ($agent_ver =~ '^v[0-9]+\.[0-9]+\.[0-9]+')
+  $checks = ($checks | append {check: "agent_version_semver", pass: $semver_ok, detail: (if $semver_ok { $agent_ver } else { $"'($agent_ver)' does not match ^v[0-9]+\\.[0-9]+\\.[0-9]+" })})
+  if not $semver_ok { $errors = ($errors | append $"agent_version_semver: '($agent_ver)' does not match semver") }
+
+  {
+    action: "validate"
+    manifest_path: $manifest_file
+    valid: ($errors | is-empty)
+    checks: $checks
+    errors: $errors
+    warnings: $warnings
+  }
+}
+
 def "main verify" [image: string, receipt_file: string] {
   if not ($image | path exists) {
     error make {msg: $"image not found: ($image)"}
@@ -208,7 +345,7 @@ def "main run" [
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  build  deploy  publish  verify  run"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  verify  run"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.[\"providers\"][0]'"
 }

@@ -13,6 +13,30 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 # ---------------------------------------------------------------------------
+# run_step — execute a would-run step when on FreeBSD with dry_run=false
+# Returns the step unchanged if dry_run=true or not on FreeBSD.
+# Returns action="ran" or action="failed" with exit_code/output fields.
+# Steps with multiple cmds must join them into a single cmd before calling.
+# ---------------------------------------------------------------------------
+def run_step [step: record, dry_run: bool] {
+    let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
+    if $dry_run or not $is_freebsd {
+        return $step
+    }
+    let result = try {
+        let out = ^sh -c $step.cmd | complete
+        if $out.exit_code == 0 {
+            $step | merge {action: "ran", exit_code: 0, output: ($out.stdout | str trim)}
+        } else {
+            $step | merge {action: "failed", exit_code: $out.exit_code, stderr: ($out.stderr | str trim)}
+        }
+    } catch { |e|
+        $step | merge {action: "failed", exit_code: -1, error: $e.msg}
+    }
+    $result
+}
+
+# ---------------------------------------------------------------------------
 # validate_manifest — step 1 (real)
 # Check required manifest fields and return a structured result record.
 # ---------------------------------------------------------------------------
@@ -112,13 +136,20 @@ def render_rc_conf [manifest: record] {
 
 # ---------------------------------------------------------------------------
 # emit_receipt — step 16 (real)
-# Compute sha256 of a placeholder path and build a receipt record.
+# Compute sha256 of the output image and build a receipt record.
+# On FreeBSD with dry_run=false: uses ^sha256 -q for the real digest.
+# Otherwise: uses a placeholder sha256.
 # ---------------------------------------------------------------------------
-def emit_receipt [manifest: record] {
+def emit_receipt [manifest: record, dry_run: bool] {
     let image_name = $manifest | get image? | get name? | default "unknown"
     let image_path = $"/tmp/genoa-($image_name).raw"
 
-    let sha256 = ("placeholder-sha256-for-dry-run" | hash sha256)
+    let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
+    let sha256 = if (not $dry_run) and $is_freebsd and ($image_path | path exists) {
+        try { ^sha256 -q $image_path | str trim } catch { "sha256-error" }
+    } else {
+        "dry-run-placeholder"
+    }
 
     {
         schema_version: "1"
@@ -128,7 +159,7 @@ def emit_receipt [manifest: record] {
         manifest_sha256: ($manifest | to json | hash sha256)
         built_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
         profile: "uefi"
-        placeholder: true
+        placeholder: ($sha256 == "dry-run-placeholder")
     }
 }
 
@@ -155,9 +186,6 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         $ssh_keys | str join "\n" | save --force $authorized_keys_path
     }
 
-    # ── step 16: emit receipt (real) ───────────────────────────────────────
-    let receipt = emit_receipt $manifest
-
     # Arch-dependent EFI filename
     let arch = $manifest | get target? | get arch? | default "amd64"
     let efi_filename = if $arch == "aarch64" { "BOOTaa64.EFI" } else { "BOOTx64.EFI" }
@@ -170,6 +198,174 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     let agent_name   = $manifest | get agent? | get name? | default ""
     let os_version   = $manifest | get target? | get os_version? | default "15.0-RELEASE"
     let os_arch      = if $arch == "aarch64" { "arm64" } else { $arch }
+
+    # ── step 3: create_disk_image ───────────────────────────────────────────
+    let step3 = run_step {
+        step: 3
+        label: "create_disk_image"
+        action: "would-run"
+        cmd: $"truncate -s ($image_size)M ($output_image)"
+        description: $"Create ($image_size) MiB raw disk image at ($output_image)."
+    } $dry_run
+    if $step3.action == "failed" {
+        return {action: "build-failed", failed_step: $step3.label, exit_code: $step3.exit_code, detail: $step3}
+    }
+
+    # ── step 4: partition_gpt ───────────────────────────────────────────────
+    # Multiple cmds joined with && so failure of any sub-command stops the chain
+    let step4_cmds = [
+        $"gpart create -s gpt ($output_image)"
+        $"gpart add -t efi    -s 512M -l esp    ($output_image)"
+        $"gpart add -t freebsd-ufs    -l rootfs ($output_image)"
+    ]
+    let step4 = run_step {
+        step: 4
+        label: "partition_gpt"
+        action: "would-run"
+        cmd: ($step4_cmds | str join " && ")
+        cmds: $step4_cmds
+        description: "Create GPT; add ESP (512 MiB FAT32) + freebsd-ufs (remainder)."
+        layout: {
+            p1: {type: "efi",         size: "512M", label: "esp",    purpose: "EFI System Partition"}
+            p2: {type: "freebsd-ufs", size: "remainder", label: "rootfs", purpose: "FreeBSD UFS2 root"}
+        }
+    } $dry_run
+    if $step4.action == "failed" {
+        return {action: "build-failed", failed_step: $step4.label, exit_code: $step4.exit_code, detail: $step4}
+    }
+
+    # ── step 5: format_esp ──────────────────────────────────────────────────
+    let step5 = run_step {
+        step: 5
+        label: "format_esp"
+        action: "would-run"
+        cmd: $"newfs_msdos -F 32 -L ESP ($output_image)p1"
+        description: "Format ESP partition as FAT32."
+    } $dry_run
+    if $step5.action == "failed" {
+        return {action: "build-failed", failed_step: $step5.label, exit_code: $step5.exit_code, detail: $step5}
+    }
+
+    # ── step 6: install_efi_loader ──────────────────────────────────────────
+    let step6_cmds = [
+        $"mount -t msdosfs ($output_image)p1 /mnt/esp"
+        $"mkdir -p /mnt/esp/EFI/BOOT"
+        $"cp /boot/loader.efi /mnt/esp/EFI/BOOT/($efi_filename)"
+        "umount /mnt/esp"
+    ]
+    let step6 = run_step {
+        step: 6
+        label: "install_efi_loader"
+        action: "would-run"
+        cmd: ($step6_cmds | str join " && ")
+        cmds: $step6_cmds
+        description: $"Copy loader.efi to ESP/EFI/BOOT/($efi_filename) for ($arch) UEFI fallback path. License: BSD-2-Clause."
+        efi_binary: $efi_filename
+        arch: $arch
+    } $dry_run
+    if $step6.action == "failed" {
+        return {action: "build-failed", failed_step: $step6.label, exit_code: $step6.exit_code, detail: $step6}
+    }
+
+    # ── step 7: format_rootfs ───────────────────────────────────────────────
+    let step7 = run_step {
+        step: 7
+        label: "format_rootfs"
+        action: "would-run"
+        cmd: $"newfs -U ($output_image)p2"
+        description: "Format rootfs partition as UFS2 with soft-updates (-U)."
+    } $dry_run
+    if $step7.action == "failed" {
+        return {action: "build-failed", failed_step: $step7.label, exit_code: $step7.exit_code, detail: $step7}
+    }
+
+    # ── step 8: extract_base ────────────────────────────────────────────────
+    let step8_cmds = [
+        $"mount ($output_image)p2 /mnt/rootfs"
+        $"tar -xf /usr/freebsd-dist/base.txz -C /mnt/rootfs"
+    ]
+    let step8 = run_step {
+        step: 8
+        label: "extract_base"
+        action: "would-run"
+        cmd: ($step8_cmds | str join " && ")
+        cmds: $step8_cmds
+        description: $"Extract FreeBSD ($os_version) base.txz to mounted rootfs."
+    } $dry_run
+    if $step8.action == "failed" {
+        return {action: "build-failed", failed_step: $step8.label, exit_code: $step8.exit_code, detail: $step8}
+    }
+
+    # ── step 9: extract_kernel ──────────────────────────────────────────────
+    let step9 = run_step {
+        step: 9
+        label: "extract_kernel"
+        action: "would-run"
+        cmd: $"tar -xf /usr/freebsd-dist/kernel.txz -C /mnt/rootfs"
+        description: $"Extract FreeBSD ($os_version) kernel.txz to mounted rootfs."
+    } $dry_run
+    if $step9.action == "failed" {
+        return {action: "build-failed", failed_step: $step9.label, exit_code: $step9.exit_code, detail: $step9}
+    }
+
+    # ── step 12: inject_agent ───────────────────────────────────────────────
+    let step12_cmds = if ($agent_name | is-empty) { [] } else { [
+        $"cp ./out/($agent_name) /mnt/rootfs/usr/local/bin/($agent_name)"
+        $"chmod 755 /mnt/rootfs/usr/local/bin/($agent_name)"
+        $"cp ./rc.d/($agent_name) /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
+        $"chmod 755 /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
+    ]}
+    let step12_cmd = if ($step12_cmds | is-empty) { "true" } else { ($step12_cmds | str join " && ") }
+    let step12 = run_step {
+        step: 12
+        label: "inject_agent"
+        action: "would-run"
+        cmd: $step12_cmd
+        cmds: $step12_cmds
+        description: $"Copy ($agent_name) binary and rc.d service script into rootfs."
+        agent_name: $agent_name
+        agent_url: $agent_url
+    } $dry_run
+    if $step12.action == "failed" {
+        return {action: "build-failed", failed_step: $step12.label, exit_code: $step12.exit_code, detail: $step12}
+    }
+
+    # ── step 14: cloud_init_clean ───────────────────────────────────────────
+    let step14_cmds = [
+        "rm -rf /mnt/rootfs/var/db/cloudinit"
+        "rm -rf /mnt/rootfs/tmp/cloud-init"
+    ]
+    let step14 = run_step {
+        step: 14
+        label: "cloud_init_clean"
+        action: "would-run"
+        cmd: ($step14_cmds | str join " && ")
+        cmds: $step14_cmds
+        description: "Remove stale cloud-init state to prevent instance-id reuse on first boot."
+    } $dry_run
+    if $step14.action == "failed" {
+        return {action: "build-failed", failed_step: $step14.label, exit_code: $step14.exit_code, detail: $step14}
+    }
+
+    # ── step 15: umount_and_compact ─────────────────────────────────────────
+    let step15_cmds = [
+        "umount /mnt/rootfs"
+        $"sync ($output_image)"
+    ]
+    let step15 = run_step {
+        step: 15
+        label: "umount_and_compact"
+        action: "would-run"
+        cmd: ($step15_cmds | str join " && ")
+        cmds: $step15_cmds
+        description: "Unmount rootfs; sync image to disk. (mkuzip optional for compressed images.)"
+    } $dry_run
+    if $step15.action == "failed" {
+        return {action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15}
+    }
+
+    # ── step 16: emit receipt (real) ───────────────────────────────────────
+    let receipt = emit_receipt $manifest $dry_run
 
     {
         schema_version: "1"
@@ -195,86 +391,26 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
                 agent_url: $agent_url
             }
 
-            # ── 3. create_disk_image (would-run) ────────────────────────────
-            {
-                step: 3
-                label: "create_disk_image"
-                action: "would-run"
-                cmd: $"truncate -s ($image_size)M ($output_image)"
-                description: $"Create ($image_size) MiB raw disk image at ($output_image)."
-            }
+            # ── 3. create_disk_image ─────────────────────────────────────────
+            $step3
 
-            # ── 4. partition_gpt (would-run) ────────────────────────────────
-            {
-                step: 4
-                label: "partition_gpt"
-                action: "would-run"
-                cmds: [
-                    $"gpart create -s gpt ($output_image)"
-                    $"gpart add -t efi    -s 512M -l esp    ($output_image)"
-                    $"gpart add -t freebsd-ufs    -l rootfs ($output_image)"
-                ]
-                description: "Create GPT; add ESP (512 MiB FAT32) + freebsd-ufs (remainder)."
-                layout: {
-                    p1: {type: "efi",         size: "512M", label: "esp",    purpose: "EFI System Partition"}
-                    p2: {type: "freebsd-ufs", size: "remainder", label: "rootfs", purpose: "FreeBSD UFS2 root"}
-                }
-            }
+            # ── 4. partition_gpt ─────────────────────────────────────────────
+            $step4
 
-            # ── 5. format_esp (would-run) ────────────────────────────────────
-            {
-                step: 5
-                label: "format_esp"
-                action: "would-run"
-                cmd: $"newfs_msdos -F 32 -L ESP ($output_image)p1"
-                description: "Format ESP partition as FAT32."
-            }
+            # ── 5. format_esp ────────────────────────────────────────────────
+            $step5
 
-            # ── 6. install_efi_loader (would-run) ────────────────────────────
-            {
-                step: 6
-                label: "install_efi_loader"
-                action: "would-run"
-                cmds: [
-                    $"mount -t msdosfs ($output_image)p1 /mnt/esp"
-                    $"mkdir -p /mnt/esp/EFI/BOOT"
-                    $"cp /boot/loader.efi /mnt/esp/EFI/BOOT/($efi_filename)"
-                    "umount /mnt/esp"
-                ]
-                description: $"Copy loader.efi to ESP/EFI/BOOT/($efi_filename) for ($arch) UEFI fallback path. License: BSD-2-Clause."
-                efi_binary: $efi_filename
-                arch: $arch
-            }
+            # ── 6. install_efi_loader ────────────────────────────────────────
+            $step6
 
-            # ── 7. format_rootfs (would-run) ─────────────────────────────────
-            {
-                step: 7
-                label: "format_rootfs"
-                action: "would-run"
-                cmd: $"newfs -U ($output_image)p2"
-                description: "Format rootfs partition as UFS2 with soft-updates (-U)."
-            }
+            # ── 7. format_rootfs ─────────────────────────────────────────────
+            $step7
 
-            # ── 8. extract_base (would-run) ───────────────────────────────────
-            {
-                step: 8
-                label: "extract_base"
-                action: "would-run"
-                cmds: [
-                    $"mount ($output_image)p2 /mnt/rootfs"
-                    $"tar -xf /usr/freebsd-dist/base.txz -C /mnt/rootfs"
-                ]
-                description: $"Extract FreeBSD ($os_version) base.txz to mounted rootfs."
-            }
+            # ── 8. extract_base ──────────────────────────────────────────────
+            $step8
 
-            # ── 9. extract_kernel (would-run) ─────────────────────────────────
-            {
-                step: 9
-                label: "extract_kernel"
-                action: "would-run"
-                cmd: $"tar -xf /usr/freebsd-dist/kernel.txz -C /mnt/rootfs"
-                description: $"Extract FreeBSD ($os_version) kernel.txz to mounted rootfs."
-            }
+            # ── 9. extract_kernel ────────────────────────────────────────────
+            $step9
 
             # ── 10. configure_loader (real) ────────────────────────────────────
             {
@@ -296,21 +432,8 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
                 rendered: $rc_conf_rendered
             }
 
-            # ── 12. inject_agent (would-run) ──────────────────────────────────
-            {
-                step: 12
-                label: "inject_agent"
-                action: "would-run"
-                cmds: (if ($agent_name | is-empty) { [] } else { [
-                    $"cp ./out/($agent_name) /mnt/rootfs/usr/local/bin/($agent_name)"
-                    $"chmod 755 /mnt/rootfs/usr/local/bin/($agent_name)"
-                    $"cp ./rc.d/($agent_name) /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
-                    $"chmod 755 /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
-                ]})
-                description: $"Copy ($agent_name) binary and rc.d service script into rootfs."
-                agent_name: $agent_name
-                agent_url: $agent_url
-            }
+            # ── 12. inject_agent ──────────────────────────────────────────────
+            $step12
 
             # ── 13. inject_ssh_keys (real) ─────────────────────────────────────
             {
@@ -328,29 +451,11 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
                 })
             }
 
-            # ── 14. cloud_init_clean (would-run) ──────────────────────────────
-            {
-                step: 14
-                label: "cloud_init_clean"
-                action: "would-run"
-                cmds: [
-                    "rm -rf /mnt/rootfs/var/db/cloudinit"
-                    "rm -rf /mnt/rootfs/tmp/cloud-init"
-                ]
-                description: "Remove stale cloud-init state to prevent instance-id reuse on first boot."
-            }
+            # ── 14. cloud_init_clean ──────────────────────────────────────────
+            $step14
 
-            # ── 15. umount_and_compact (would-run) ────────────────────────────
-            {
-                step: 15
-                label: "umount_and_compact"
-                action: "would-run"
-                cmds: [
-                    "umount /mnt/rootfs"
-                    $"sync ($output_image)"
-                ]
-                description: "Unmount rootfs; sync image to disk. (mkuzip optional for compressed images.)"
-            }
+            # ── 15. umount_and_compact ────────────────────────────────────────
+            $step15
 
             # ── 16. emit_receipt (real) ────────────────────────────────────────
             {

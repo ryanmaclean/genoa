@@ -1,0 +1,331 @@
+# genoa manifest — agent port template
+# Schema: v1  |  Full schema: schema/manifest.v1.json
+# Validate: nu genoa.nu validate examples/agent-port-template.toml
+# Build:    nu genoa.nu build   examples/agent-port-template.toml
+# Deploy:   nu genoa.nu deploy  examples/agent-port-template.toml
+
+# Required. Must be exactly "v1". Increment to v2 on breaking schema changes.
+schema_version = "v1"
+
+# ---------------------------------------------------------------------------
+# [image] — Identity and output configuration
+# All four fields (name, version, format, size_mb) are required.
+# ---------------------------------------------------------------------------
+[image]
+
+# Slug used as the output filename stem. Pattern: ^[a-z0-9][a-z0-9_-]*$
+# Output will be: out/<name>-<version>.<format>
+# Replace "my-agent" with your agent's canonical slug.
+name = "my-agent-freebsd-amd64"
+
+# SemVer tag for this image build. Pattern: ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$
+# Keep in sync with [agent].version. A mismatch is legal but confusing.
+version = "v0.1.0"
+
+# Output image format.
+#   qcow2 — preferred for QEMU; sparse (artifact << size_mb on disk)
+#   raw   — required for some providers (Linode, Hetzner); not sparse
+#   vmdk  — for VMware-compatible targets
+# Vultr custom ISO upload accepts "iso" only — see freebsd-vultr-aarch64.toml.
+# Most provider adapters expect qcow2 or raw; check catalog/providers.v1.json.
+format = "raw"
+
+# Provisioned image size in MiB. Range: 512–65536.
+# qcow2: disk appears this large inside the VM; artifact is much smaller.
+# raw:   artifact is exactly this size on disk.
+# 2048 MiB (2 GiB) is sufficient for the base + one statically-linked binary.
+# Add 512–1024 MiB if your agent has large config files or embedded models.
+size_mb = 2048
+
+# Directory where the finished image and build receipt are written.
+# Default: ./out  — override if your CI pipeline expects a specific path.
+output_dir = "./out"
+
+# Human-readable description. Carried into the build receipt and catalog.
+description = "Minimal FreeBSD image shipping my-agent v0.1.0 (amd64, Vultr)"
+
+# ---------------------------------------------------------------------------
+# [target] — OS, architecture, and hypervisor profile
+# All four fields (os, os_version, arch, platform) are required.
+# ---------------------------------------------------------------------------
+[target]
+
+# Target operating system. One of: freebsd | netbsd
+os = "freebsd"
+
+# OS release string. Pattern: ^[0-9]+\.[0-9]+(\.[0-9]+)?(-RELEASE|-STABLE|-CURRENT|-SNAPSHOT)?$
+# Use RELEASE builds for production; CURRENT only for kernel-dev work.
+os_version = "15.0-RELEASE"
+
+# CPU architecture. One of: amd64 | aarch64 | riscv64
+# amd64:   Vultr, Linode, DigitalOcean, most x86 providers
+# aarch64: OCI Ampere A1 free tier, Scaleway, Mythic Beasts Pi nodes
+#   (Vultr does not offer aarch64 compute as of 2026-04 — see providers.v1.json)
+arch = "amd64"
+
+# Target hardware/hypervisor platform. Drives kernel config selection.
+#   generic — cloud VM (virtio drivers, no embedded SoC assumptions); use for Vultr/Linode/OCI
+#   qemu    — local QEMU dev loop; enables virtio-net, virtio-blk explicitly
+#   rpi4    — Raspberry Pi 4 (requires aarch64)
+#   rpi5    — Raspberry Pi 5 (requires aarch64)
+platform = "generic"
+
+# Optional: SSH destination for a remote FreeBSD build host.
+# Omit this field to build locally (requires a FreeBSD host or jail).
+# genoa will SSH in, run the build, and pull back the artifact.
+# Format: user@host:port  — port 2225 is the smolBSD convention.
+# build_host = "builder@fb-vm-24:2225"
+
+# ---------------------------------------------------------------------------
+# [kernel] — Kernel config and options
+# Only [kernel].config is required.
+# ---------------------------------------------------------------------------
+[kernel]
+
+# Kernel config name. Built-ins: SMOLBSD | GENERIC | MINIMAL | RPI
+# SMOLBSD: stripped-down config maintained by this project; smallest footprint
+# GENERIC: upstream FreeBSD default; broadest hardware support; larger binary
+# MINIMAL: upstream bare-minimum config; may need extra_options to add drivers
+# Custom: supply a kernel_delta_file and set config to that file's CONFIG name
+config = "SMOLBSD"
+
+# Optional: path to a kernel config delta file, relative to this manifest.
+# The delta is applied on top of [kernel].config before building.
+# kernel_delta_file = "kernel/my-agent-delta"
+
+# Additional nodevice/nooptions/options lines injected into the kernel config.
+# Useful for trimming drivers that waste image space when you know your hardware.
+# Pattern for each entry: ^(no)?(device|options|makeoptions)\s+\S.*$
+#
+# Example: strip the USB stack entirely (saves ~800 KiB) for a headless cloud VM
+#   "nodevice usb"       — removes the USB bus driver
+#   "nodevice uhci"      — removes UHCI host controller (PCI USB 1.x)
+#   "nodevice xhci"      — removes xHCI host controller (USB 3.x)
+#
+# Example: disable SCTP if your agent does not need it
+#   "nooptions SCTP"
+extra_options = [
+  "nodevice usb",
+  "nodevice uhci",
+  "nodevice xhci",
+  "nooptions SCTP",
+]
+
+# Strip debug symbols from the kernel binary. Reduces binary size by ~50%.
+# Set to false only when building a kernel you intend to debug with kgdb.
+strip_debug = true
+
+# ---------------------------------------------------------------------------
+# [packages] — pkgbase package set baked into the image
+# ---------------------------------------------------------------------------
+[packages]
+
+# Packages to include. These are FreeBSD pkgbase component names.
+# The defaults below are the minimal set for a working system that can:
+#   - run rc.d services (FreeBSD-rc)
+#   - link against libc (FreeBSD-clibs, FreeBSD-runtime)
+#   - resolve DNS and fetch URLs (FreeBSD-utilities includes libc, fetch(1))
+#   - bootstrap pkg(8) for post-boot installs (FreeBSD-pkg-bootstrap)
+#   - verify TLS (FreeBSD-openssl-lib)
+# Add packages here if your agent needs shell scripting, Python, jq, etc.
+# Example: add "FreeBSD-sh" for /bin/sh, "FreeBSD-libarchive" for tar(1)
+include = [
+  "FreeBSD-runtime",      # libc, libpthread, libm — essential
+  "FreeBSD-clibs",        # runtime C libraries
+  "FreeBSD-rc",           # /etc/rc.d framework; needed for rc_service
+  "FreeBSD-utilities",    # coreutils equivalent: ls, cp, mv, etc.
+  "FreeBSD-pkg-bootstrap", # pkg(8) bootstrap for post-boot installs
+  "FreeBSD-libarchive",   # libarchive (tar, cpio) — many agents use this
+  "FreeBSD-openssl-lib",  # TLS client support; needed for HTTPS fetches
+  "FreeBSD-fetch",        # fetch(1) for in-image downloads
+]
+
+# Glob patterns excluded via vm_extra_filter_base_packages().
+# Applied after include; exclusions win over inclusions.
+# Default patterns remove debugging tools, 32-bit compat libs, and sources
+# that add hundreds of MiB with no runtime value for a deployed agent image.
+exclude_patterns = [
+  "*-dbg",          # debug packages (DWARF symbols)
+  "*-lib32",        # 32-bit compat libraries (not needed in 64-bit agent)
+  "FreeBSD-tests*", # test suites; runtime waste
+  "FreeBSD-lldb*",  # debugger; not needed in production image
+  "FreeBSD-devel*", # development headers; agent binary is pre-compiled
+  "FreeBSD-src*",   # kernel/userland source; large, not needed at runtime
+]
+
+# pkg(8) repository URL for third-party packages.
+# Change :amd64 to :aarch64 when building for aarch64 targets.
+# "quarterly" is stable; "latest" tracks pkg releases more aggressively.
+pkg_repo = "https://pkg.freebsd.org/FreeBSD:15:amd64/quarterly"
+
+# ---------------------------------------------------------------------------
+# [agent] — The binary payload baked into the image
+# Required: name, version, source
+# ---------------------------------------------------------------------------
+[agent]
+
+# Agent identifier. Lowercase, no spaces. Used in rc.d naming and receipts.
+# Examples: "ii-agent", "conclave", "irclaw-v2", "my-agent"
+name = "my-agent"
+
+# SemVer version of the agent binary. Ideally matches [image].version.
+# Pattern: ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$
+version = "v0.1.0"
+
+# ---------------------------------------------------------------------------
+# [agent.source] — Where to fetch the agent binary
+#
+# Three strategies are available. Uncomment exactly ONE block.
+# ---------------------------------------------------------------------------
+
+# --- Strategy A: url (direct HTTPS download) --------------------------------
+# Use when: your binary is hosted on a public HTTPS endpoint (GitHub releases,
+# your own CDN, S3 presigned URL, etc.).
+# Required fields: type, url, sha256
+# The sha256 MUST match the downloaded file or the build aborts.
+# All-zeros sha256 triggers a validation WARNING — replace before production.
+[agent.source]
+type = "url"
+url = "https://releases.example.com/my-agent/v0.1.0/my-agent-freebsd-amd64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+# Compute the real sha256: sha256sum ./my-agent-freebsd-amd64 | awk '{print $1}'
+# or on macOS/FreeBSD:     shasum -a 256 ./my-agent-freebsd-amd64
+
+# --- Strategy B: gitea_release (fleet-local Gitea) -------------------------
+# Use when: your binary is a release asset on the fleet Gitea instance.
+# This is the most common path for internally-developed agents in this fleet.
+# Required fields: type, repo, tag, asset, sha256
+# gitea.local resolves to the QNAS Gitea at port 3000 on the fleet LAN.
+#
+# [agent.source]
+# type    = "gitea_release"
+# repo    = "my-team/my-agent"                          # owner/repo on gitea.local
+# tag     = "v0.1.0-freebsd-amd64"                      # release tag
+# asset   = "my-agent-freebsd-amd64"                    # filename within the release
+# sha256  = "0000000000000000000000000000000000000000000000000000000000000000"
+# # genoa resolves: http://gitea.local:3000/my-team/my-agent/releases/download/v0.1.0-freebsd-amd64/my-agent-freebsd-amd64
+
+# --- Strategy C: local_path (dev build artifact) ---------------------------
+# Use when: iterating locally; binary lives on the build host filesystem.
+# sha256 is NOT required for local_path (no remote fetch to verify).
+# Switch to url or gitea_release before shipping a production image.
+#
+# [agent.source]
+# type = "local_path"
+# path = "/home/builder/my-agent/target/x86_64-unknown-freebsd/release/my-agent"
+
+# Absolute path inside the image where the binary is installed.
+# Default: /usr/local/bin — in PATH for rc.d and interactive shells.
+# Change only if your agent has an unconventional install convention.
+install_path = "/usr/local/bin"
+
+# ---------------------------------------------------------------------------
+# [agent.rc_service] — rc.d service to start the agent at boot
+# Omit this entire section to skip rc.d integration (manual start only).
+# ---------------------------------------------------------------------------
+[agent.rc_service]
+
+# Whether to enable the service at boot via rc.conf.
+# false = service is installed but not enabled; useful for staged rollouts.
+enabled = true
+
+# rc.d service name. Convention: underscores, not hyphens (rc.d naming rule).
+# genoa generates /usr/local/etc/rc.d/<name> and adds <name>_enable="YES"
+# to /etc/rc.conf.
+name = "my_agent"
+
+# Arguments passed verbatim to the agent binary when rc.d starts it.
+# The full invocation will be: /usr/local/bin/my-agent <command_args>
+# Common patterns:
+#   --listen 0.0.0.0:8080          bind to all interfaces on port 8080
+#   --config /etc/agent/config.json  point at baked-in config file
+#   --log-level info                 structured log verbosity
+#   --data-dir /var/db/my-agent     persistent state directory
+command_args = "--listen 0.0.0.0:8080 --config /etc/agent/config.json --log-level info"
+
+# ---------------------------------------------------------------------------
+# [agent.config] — Key/value config baked into the image
+# Keys become environment variables or entries in /etc/agent/config (depending
+# on the genoa rc.d template). All values must be strings.
+# Omit this section if your agent is fully configured via command_args.
+# ---------------------------------------------------------------------------
+[agent.config]
+LOG_LEVEL    = "info"                          # logging verbosity
+API_ENDPOINT = "https://api.example.com/v1"   # upstream API the agent calls
+LISTEN_ADDR  = "0.0.0.0:8080"                 # redundant with command_args here, shown for illustration
+DATA_DIR     = "/var/db/my-agent"             # writable state directory inside the VM
+FLEET_ID     = "prod-iad-01"                  # logical fleet identity; override per-region
+TLS_SKIP_VERIFY = "false"                     # never set true in production
+
+# ---------------------------------------------------------------------------
+# [network] — rc.conf network configuration baked into the image
+# Omit to accept genoa defaults (dhcp on vtnet0, hostname smolbsd).
+# ---------------------------------------------------------------------------
+[network]
+
+# Primary network interface inside the VM.
+# vtnet0 — VirtIO NIC; correct for QEMU, KVM, Vultr, Linode, OCI
+# ue0    — USB Ethernet (RPi boards via USB dongle)
+# genet0 — Broadcom GENET (Raspberry Pi 4/5 onboard NIC)
+interface = "vtnet0"
+
+# Network mode. One of: dhcp | static
+# dhcp   — correct for cloud providers; IP assigned by hypervisor DHCP
+# static — use when you need a fixed IP, e.g. bare-metal or macvlan lab
+mode = "dhcp"
+
+# Static IP configuration — only relevant when mode = "static".
+# Uncomment and fill these when switching to static:
+# mode       = "static"
+# static_ip  = "10.0.3.50/23"   # CIDR notation; /23 = 512 host fleet subnet
+# gateway    = "10.0.3.1"
+
+# Hostname assigned in /etc/rc.conf and /etc/hosts.
+# For fleet deployments, use a name that includes the agent role and region.
+hostname = "my-agent-01"
+
+# ---------------------------------------------------------------------------
+# Boot profile
+# uefi  — UEFI boot; correct for all cloud providers and modern hardware
+# kboot — kboot (FreeBSD boot loader via Linux kexec); experimental
+# ---------------------------------------------------------------------------
+profile = "uefi"
+
+# ---------------------------------------------------------------------------
+# [deploy] — Cloud provider dispatch
+# genoa looks up the provider in catalog/providers.v1.json to find the
+# deployment_path (e.g. "snapshot-url", "byoi-api").
+# ---------------------------------------------------------------------------
+[deploy]
+
+# Provider ID from catalog/providers.v1.json.
+# "vultr" — deployment_path: snapshot-url; best FreeBSD experience mid-tier
+# Other validated IDs: "oci", "linode_akamai", "digitalocean", "ovhcloud_public"
+# Check catalog/providers.v1.json for byoi_format before choosing format above.
+provider = "vultr"
+
+# Optional override of the catalog deployment_path.
+# Use only if the catalog entry is stale or your account has special access.
+# path_override = "byoi-api"
+
+# ---------------------------------------------------------------------------
+# [signing] — Image signing with signify(1)
+# Omit this section to produce an unsigned image.
+# ---------------------------------------------------------------------------
+# [signing]
+# tool           = "signify"          # "signify" | "none"
+# key_file       = "~/.keys/genoa.sec"  # private key — NEVER commit this
+# public_key_file = "keys/genoa.pub"   # public key — safe to commit
+
+# ---------------------------------------------------------------------------
+# [metadata] — Arbitrary string key/value pairs carried into the build receipt
+# Useful for CI traceability, region targeting, and audit trails.
+# All values must be strings.
+# ---------------------------------------------------------------------------
+[metadata]
+maintainer    = "agent-team@example.com"         # team contact
+repo          = "gitea.local/my-team/my-agent"   # source repo
+ci_pipeline   = "gitea-runner-01"                # which CI runner produced this
+target_region = "ewr"                            # Vultr region slug (Newark)
+builder_notes = "amd64 production image, Vultr custom ISO upload"
+schema_docs   = "https://github.com/ryanmaclean/genoa/schema/manifest.v1.json"
