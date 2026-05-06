@@ -49,6 +49,25 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
     let image_path = $"($manifest.image?.output_dir? | default "./out")/genoa-kboot.raw"
     let task_endpoint = ""
 
+    # Derive arch-specific values from manifest early so all steps can use them
+    let os_ver = $manifest.target?.os_version? | default "15.0-RELEASE"
+    let arch = $manifest.target?.arch? | default "amd64"
+    let linux_arch = match $arch {
+        "amd64"   => "x86_64"
+        "aarch64" => "arm64"
+        "riscv64" => "riscv64"
+        _         => "x86_64"
+    }
+    let kernel_img = if $arch == "aarch64" { "Image" } else { "bzImage" }
+    let kernel_defconfig = if $arch == "aarch64" { "defconfig" } else { "x86_64_defconfig" }
+    let kernel_arch_path = $"arch/($linux_arch)/boot/($kernel_img)"
+    let grub_target = if $arch == "aarch64" { "arm64-efi" } else { "x86_64-efi" }
+    let fbsd_cpuarch = match $arch {
+        "amd64"   => "amd64"
+        "aarch64" => "aarch64"
+        _         => "amd64"
+    }
+
     # Step 1
     let step1 = run_step {
         step: 1
@@ -69,6 +88,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         cmd: "sgdisk -n1:0:+512M -t1:ef00 -n2:0:+512M -t2:8300 -n3:0:0 -t3:a502 /dev/loop0"
         description: "Partition disk: p1=ESP(FAT32) p2=ext4(kboot) p3=UFS2(FreeBSD root)"
         details: "Uses GPT and modern partition type GUIDs for clarity"
+        notes: ["kboot images are built on a Linux host; /dev/loop0 is the Linux loopback device (by design)"]
     } $dry_run
     if $step2.action == "failed" {
         return {action: "build-failed", failed_step: $step2.label, exit_code: $step2.exit_code, detail: $step2}
@@ -121,8 +141,8 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         step: 6
         label: "install_grub2"
         action: "would-run"
-        cmd: "grub-install --target=x86_64-efi --boot-directory=/mnt/kboot/boot --efi-directory=/mnt/kboot/boot/efi"
-        description: "Install GRUB2 (EFI) to p1/p2 boot partition"
+        cmd: $"grub-install --target=($grub_target) --boot-directory=/mnt/kboot/boot --efi-directory=/mnt/kboot/boot/efi"
+        description: $"Install GRUB2 [EFI, ($grub_target)] to p1/p2 boot partition"
         notes: [
             "GRUB2 is GPL-2 licensed — invoked as external tool, never vendored"
             "Requires grub2-efi-modules and efi-grub2 packages on builder"
@@ -167,10 +187,10 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         step: 9
         label: "build_linux_kernel"
         action: "would-run"
-        cmd: "cd /tmp/linux-build && make -j$(nproc) x86_64_defconfig && make -j$(nproc) bzImage"
-        description: "Build minimal Linux kernel (virtio + kexec + ext4)"
+        cmd: $"cd /tmp/linux-build && make ($kernel_defconfig) && make -j$(nproc) ($kernel_img)"
+        description: $"Build minimal Linux kernel [virtio + kexec + ext4] for ($linux_arch)"
         notes: [
-            "Kernel image (bzImage) will be placed at /tmp/linux-build/arch/x86_64/boot/bzImage"
+            $"Kernel image ($kernel_img) will be placed at /tmp/linux-build/($kernel_arch_path)"
             "Should be <10 MB uncompressed"
         ]
     } $dry_run
@@ -183,8 +203,8 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         step: 10
         label: "install_linux_kernel_to_boot"
         action: "would-run"
-        cmd: "cp /tmp/linux-build/arch/x86_64/boot/bzImage /mnt/kboot/boot/vmlinuz-kboot"
-        description: "Copy Linux kernel to boot partition as vmlinuz-kboot"
+        cmd: $"cp /tmp/linux-build/($kernel_arch_path) /mnt/kboot/boot/vmlinuz-kboot"
+        description: $"Copy Linux ($linux_arch) kernel to boot partition as vmlinuz-kboot"
     } $dry_run
     if $step10.action == "failed" {
         return {action: "build-failed", failed_step: $step10.label, exit_code: $step10.exit_code, detail: $step10}
@@ -260,9 +280,6 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15}
     }
 
-    let os_ver = $manifest.target?.os_version? | default "15.0-RELEASE"
-    let arch = $manifest.target?.arch? | default "amd64"
-
     # Step 16
     let step16 = run_step {
         step: 16
@@ -336,7 +353,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         hostname: $hostname
         image_path: $image_path
         image_size_gb: $image_size_gb
-        arch: "amd64"
+        arch: $arch
         bootloader: "GRUB2"
         kernel_provider: "Linux mini-kernel"
         init_provider: "loader.kboot (FreeBSD)"
@@ -378,7 +395,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         freebsd_native_boot: "FreeBSD kernel boots via kexec, runs normally. No FreeBSD bootloader modifications needed."
 
         kboot_source: "https://cgit.freebsd.org/src/tree/stand/kboot"
-        kboot_build_cmd: "cd /usr/src/stand/kboot && make MK_LOADER_KBOOT=yes MACHINE_CPUARCH=amd64"
+        kboot_build_cmd: $"cd /usr/src/stand/kboot && make MK_LOADER_KBOOT=yes MACHINE_CPUARCH=($fbsd_cpuarch)"
         kboot_production_use: "GCE ARM64 (Google Cloud Engine) uses kboot for FreeBSD ARM64 images"
 
         licensing: {

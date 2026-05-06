@@ -17,12 +17,13 @@ nu genoa.nu schema
 ```
 nu genoa.nu describe examples/agent-port-template.toml
 ```
-— résumé résolu du manifest
+— résumé complet de toutes les sections du manifest et de leurs valeurs résolues, y compris les champs placeholder
 
 ## 2. Adapter le modèle
 
 Copier `examples/agent-port-template.toml`. Modifier :
 - `image.name`, `image.version`
+- `image.output_dir` (répertoire de destination des artefacts, par défaut `"./out"`)
 - `agent.name`, `agent.version`
 - `agent.source.type` (`url` / `gitea_release` / `local_path`)
 - `agent.source.url` + `sha256`
@@ -52,19 +53,26 @@ Plan en 16 étapes. Vérifier l'URL de récupération (étape 3), le nom du serv
 ```
 nu genoa.nu build your-agent.toml
 ```
-Nécessite un hôte de build FreeBSD. Définir `target.build_host` pour le dispatch SSH distant.
-Sortie : `out/<name>-<version>.raw` + `out/<name>-<version>.receipt.json`
+Nécessite un hôte de build FreeBSD. Définir `target.build_host` pour le dispatch SSH distant. Après un build distant, genoa rapatrie l'image et le reçu vers `[image].output_dir` local via SCP.
+
+Sortie dans `[image].output_dir` (par défaut `./out`) :
+```
+out/<name>-<version>.raw
+out/<name>-<version>.receipt.json
+```
+
+Le reçu est une enveloppe JSON de provenance v1 conforme avec des objets imbriqués : `image`, `build`, `agent`, `hashes`, `claims`. Conserver ce fichier — l'étape de déploiement le lit automatiquement.
 
 ## 6. Déploiement
 
 ```
 VULTR_API_KEY=<key> nu genoa.nu deploy your-agent.toml
 ```
-Lit l'attestation automatiquement. Retourne : `{ provider, image_id, status, receipt }`
+Lit l'attestation automatiquement depuis `[image].output_dir`. Retourne : `{ provider, image_id, status, receipt }`
 
 ## 7. Commande unique
 
 ```
 nu genoa.nu run your-agent.toml
 ```
-Enchaîne build → publish → deploy. Code de sortie unique pour usage en CI.
+Enchaîne validate → build → publish → deploy. Code de sortie unique pour usage en CI.

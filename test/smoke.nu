@@ -198,7 +198,12 @@ let tests = [
     if ($hashes_missing | length) > 0 {
       error make {msg: $"receipt.hashes missing fields: ($hashes_missing | str join ', ')"}
     }
-    $"v1 receipt schema valid: ($receipt_path)"
+    # Check claims is a non-empty list
+    let claims_count = ($receipt.claims | length)
+    if $claims_count == 0 {
+      error make {msg: "receipt.claims must be a non-empty list; got 0 elements"}
+    }
+    $"v1 receipt schema valid: ($receipt_path), claims=($claims_count)"
   })
 
   # deploy_dry_run — returns a record (not an exception)

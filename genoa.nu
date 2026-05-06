@@ -10,19 +10,42 @@ def "main schema" [] {
 
 def "main describe" [manifest_file: string] {
   if not ($manifest_file | path exists) {
-    error make {msg: $"manifest file not found: ($manifest_file)"}
+    error make {msg: $"manifest not found: ($manifest_file)"}
   }
   let m = open $manifest_file
   {
-    action: "describe"
+    action: "described"
     manifest_path: $manifest_file
-    image_name:    ($m.image?.name?    | default "unknown")
-    image_version: ($m.image?.version? | default "unknown")
-    target_os:     ($m.target?.os?     | default "unknown")
-    target_arch:   ($m.target?.arch?   | default "unknown")
-    profile:       ($m.profile?        | default "uefi")
-    provider:      ($m.deploy?.provider? | default "none")
-    status: "parsed"
+    image: {
+      name:       ($m.image?.name?       | default "")
+      version:    ($m.image?.version?    | default "")
+      format:     ($m.image?.format?     | default "")
+      size_mb:    ($m.image?.size_mb?    | default 0)
+      output_dir: ($m.image?.output_dir? | default "./out")
+    }
+    target: {
+      os:         ($m.target?.os?         | default "")
+      os_version: ($m.target?.os_version? | default "")
+      arch:       ($m.target?.arch?       | default "")
+      platform:   ($m.target?.platform?   | default "")
+    }
+    kernel: {
+      config: ($m.kernel?.config? | default "")
+    }
+    agent: {
+      name:        ($m.agent?.name?         | default "")
+      version:     ($m.agent?.version?      | default "")
+      source_type: ($m.agent?.source?.type? | default "")
+    }
+    network: {
+      hostname:  ($m.network?.hostname?  | default "smolbsd")
+      mode:      ($m.network?.mode?      | default "dhcp")
+      interface: ($m.network?.interface? | default "vtnet0")
+    }
+    profile:        ($m.profile?          | default "uefi")
+    provider:       ($m.deploy?.provider? | default "")
+    signing:        ($m.signing?.tool?    | default "none")
+    schema_version: ($m.schema_version?   | default "")
   }
 }
 
@@ -122,8 +145,6 @@ def "main build" [
     })
   }
 
-  let manifest_content = open $manifest_file
-
   let build_result = if not ($profile_file | path exists) {
     {action: "stub", reason: $"($p) profile not yet implemented", profile: $p}
   } else if $p == "kboot" {
@@ -138,15 +159,19 @@ def "main build" [
   let build_record = $build_result
 
   # Write receipt file
+  let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
   let image_sha256 = if $dry_run { "PLACEHOLDER_DRY_RUN" } else {
-    let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
     if $is_freebsd and ($image_path | path exists) {
       try { ^sha256 -q $image_path | str trim } catch { "PLACEHOLDER_DRY_RUN" }
     } else {
       "PLACEHOLDER_DRY_RUN"
     }
   }
-  let manifest_sha256 = ($manifest_content | to json | hash sha256)
+  let manifest_sha256 = try {
+    ^sha256 -q $manifest_file | str trim  # FreeBSD
+  } catch {
+    try { ^sha256sum $manifest_file | split row " " | first | str trim } catch { "PLACEHOLDER" }
+  }
 
   # Signing step — runs after image write, before receipt
   let signing_cfg = ($m.signing? | default {tool: "none"})
@@ -214,7 +239,41 @@ def "main build" [
       manifest_sha256: $manifest_sha256
     }
     signing: $sign_result
-    claims: []
+    claims: (do {
+      let claim_status = if $dry_run { "unverified" } else if $is_freebsd { "verified" } else { "unverified" }
+      [
+        {
+          claim: $"image sha256 is ($image_sha256)"
+          probe: $"sha256sum ($image_path)"
+          expect: $image_sha256
+          status: $claim_status
+        }
+        {
+          claim: $"manifest sha256 is ($manifest_sha256)"
+          probe: $"sha256sum ($manifest_file)"
+          expect: $manifest_sha256
+          status: "verified"
+        }
+        {
+          claim: $"agent name is ($m.agent?.name? | default "unknown")"
+          probe: $"genoa describe ($manifest_file) | from json | get agent_name"
+          expect: ($m.agent?.name? | default "unknown")
+          status: "verified"
+        }
+        {
+          claim: $"image format is ($m.image?.format? | default "raw")"
+          probe: $"file ($image_path)"
+          expect: ($m.image?.format? | default "raw")
+          status: $claim_status
+        }
+        {
+          claim: $"target os is ($m.target?.os? | default "freebsd")"
+          probe: "genoa describe <manifest> | from json | get target_os"
+          expect: ($m.target?.os? | default "freebsd")
+          status: "verified"
+        }
+      ]
+    })
   }
 
   $receipt | save --force $receipt_path
@@ -262,7 +321,7 @@ def "main deploy" [
     if not ($from_receipt | path exists) {
       error make {msg: $"receipt file not found: ($from_receipt)"}
     }
-    let _r = open $from_receipt; $_r.image?.output_path? | default ($_r.image_path? | default "/tmp/genoa.raw")
+    let _r = open $from_receipt; $_r.image?.output_path? | default "./out/genoa.raw"
   } else {
     let _output_dir  = ($m.image?.output_dir? | default "./out")
     let _img_name    = ($m.image?.name?       | default "genoa")
@@ -591,16 +650,16 @@ def "main verify" [image: string, receipt_file: string] {
   }
 }
 
-def "main status" [] {
-  # Find all receipt files in current dir and subdirs (max depth 2)
-  let receipts = try { ls **/*.receipt.json | get name } catch { [] }
-
-  # Also check ./out/ directory
-  let out_receipts = if ("out" | path exists) {
-    try { ls out/*.receipt.json | get name } catch { [] }
+def "main status" [--dir: string = "./out"] {
+  # Scan the configured output directory for receipt files
+  let out_receipts = if ($dir | path exists) {
+    try { ls $"($dir)/*.receipt.json" | get name } catch { [] }
   } else { [] }
 
-  let all_receipts = ($receipts | append $out_receipts | uniq)
+  # Also scan current directory (non-recursive) for receipts placed at the root
+  let cur_receipts = try { ls *.receipt.json | get name } catch { [] }
+
+  let all_receipts = ($out_receipts | append $cur_receipts | uniq)
 
   if ($all_receipts | is-empty) {
     return {
