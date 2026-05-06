@@ -235,6 +235,25 @@ let tests = [
     $"receipts_found=($found)"
   })
 
+  # signing_dry_run — receipt includes signing field with action="unsigned" when no signing section in manifest
+  (run_test "signing_dry_run" {
+    let rec = (genoa "main build 'examples/agent-port-template.toml' --dry-run")
+    let receipt_path = ($rec | get receipt_path)
+    let receipt = (open $receipt_path)
+    if "signing" not-in $receipt {
+      error make {msg: "receipt is missing 'signing' field"}
+    }
+    let action = ($receipt.signing?.action? | default "missing")
+    if $action != "unsigned" {
+      error make {msg: $"expected signing.action=unsigned, got ($action)"}
+    }
+    let tool = ($receipt.signing?.tool? | default "missing")
+    if $tool != "none" {
+      error make {msg: $"expected signing.tool=none, got ($tool)"}
+    }
+    $"signing.action=($action) signing.tool=($tool)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

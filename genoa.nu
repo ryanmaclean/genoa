@@ -147,6 +147,45 @@ def "main build" [
     }
   }
   let manifest_sha256 = ($manifest_content | to json | hash sha256)
+
+  # Signing step — runs after image write, before receipt
+  let signing_cfg = ($m.signing? | default {tool: "none"})
+  let sign_result = if (($signing_cfg.tool? | default "none") == "signify") {
+    let key_file = ($signing_cfg.key_file? | default "")
+    let pub_key_file = ($signing_cfg.public_key_file? | default "")
+
+    if $dry_run {
+      {action: "would-sign", tool: "signify", key_file: $key_file, image: $image_path}
+    } else if $key_file == "" {
+      {action: "failed", step: "signing", error: "signing.key_file is required when tool=signify"}
+    } else if not ($key_file | path exists) {
+      {action: "failed", step: "signing", error: $"key_file not found: ($key_file)"}
+    } else {
+      # Locate signify binary
+      let signify_bin = if ("/usr/bin/signify" | path exists) { "/usr/bin/signify" }
+        else if ("/usr/local/bin/signify" | path exists) { "/usr/local/bin/signify" }
+        else if ("/usr/local/bin/signify-ossl" | path exists) { "/usr/local/bin/signify-ossl" }
+        else { "" }
+
+      if $signify_bin == "" {
+        {action: "failed", step: "signing", error: "signify not found; install signify or signify-ossl"}
+      } else {
+        # signify -S -s key.sec -m image_file  ->  produces image_file.sig
+        let sign_out = try {
+          ^$signify_bin -S -s $key_file -m $image_path | complete
+        } catch { |e| {exit_code: -1, stderr: $e.msg} }
+
+        if $sign_out.exit_code == 0 {
+          {action: "signed", tool: "signify", sig_file: $"($image_path).sig", public_key_file: $pub_key_file}
+        } else {
+          {action: "failed", step: "signing", stderr: ($sign_out.stderr? | default "signify error")}
+        }
+      }
+    }
+  } else {
+    {action: "unsigned", tool: "none"}
+  }
+
   let receipt = {
     schema_version: "v1"
     receipt_id: (random uuid)
@@ -174,6 +213,7 @@ def "main build" [
       image_sha256: $image_sha256
       manifest_sha256: $manifest_sha256
     }
+    signing: $sign_result
     claims: []
   }
 
@@ -374,6 +414,27 @@ def "main validate" [manifest_file: string] {
     let bh_ok = ($bh =~ '^[a-z_][a-z0-9_.-]*@[a-z0-9._-]+(:[0-9]+)?$')
     $checks = ($checks | append {check: "build_host_format", pass: $bh_ok, detail: (if $bh_ok { $"'($bh)' matches expected format" } else { $"'($bh)' does not match ^[a-z_][a-z0-9_.-]*@[a-z0-9._-]+(:[0-9]+)?$" })})
     if not $bh_ok { $warnings = ($warnings | append $"build_host_format: '($bh)' does not match expected pattern — expected user@host or user@host:port") }
+  }
+
+  # 14. signing_keys_present (warn only — signing is optional)
+  let sign_tool = ($m.signing?.tool? | default "none")
+  if $sign_tool == "signify" {
+    let sign_key = ($m.signing?.key_file? | default "")
+    let sign_pub = ($m.signing?.public_key_file? | default "")
+    let sign_key_ok = ($sign_key != "")
+    let sign_pub_ok = ($sign_pub != "")
+    if not $sign_key_ok {
+      $checks = ($checks | append {check: "signing_key_file", pass: false, detail: "signing.key_file is empty; required when tool=signify"})
+      $warnings = ($warnings | append "signing_key_file: signing.key_file is empty — build will fail at sign step")
+    } else {
+      $checks = ($checks | append {check: "signing_key_file", pass: true, detail: $"signing.key_file=($sign_key)"})
+    }
+    if not $sign_pub_ok {
+      $checks = ($checks | append {check: "signing_public_key_file", pass: false, detail: "signing.public_key_file is empty; recommended when tool=signify"})
+      $warnings = ($warnings | append "signing_public_key_file: signing.public_key_file is empty — public key will not be recorded in receipt")
+    } else {
+      $checks = ($checks | append {check: "signing_public_key_file", pass: true, detail: $"signing.public_key_file=($sign_pub)"})
+    }
   }
 
   {
