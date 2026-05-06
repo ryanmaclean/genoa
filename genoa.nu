@@ -350,16 +350,16 @@ def "main validate" [manifest_file: string] {
   # 11. agent_sha256_real
   let sha256 = ($m.agent?.source?.sha256? | default "")
   if $sha256 != "" {
-    let all_zeros = ($sha256 | str replace --all "0" "" | str length) == 0
-    let sha_pass = (not $all_zeros)
+    let sha_fake  = ($sha256 | split chars | uniq | length) == 1
+    let sha_pass = (not $sha_fake)
     let sha_prefix = ($sha256 | str substring 0..8)
     let sha_detail = if $sha_pass {
       $"sha256 present ($sha_prefix)..."
     } else {
-      "sha256 is all-zeros placeholder — replace before production build"
+      "sha256 is a repeated-character placeholder — replace before production build"
     }
     $checks = ($checks | append {check: "agent_sha256_real", pass: $sha_pass, detail: $sha_detail})
-    if not $sha_pass { $warnings = ($warnings | append "agent_sha256_real: sha256 is all-zeros placeholder — replace before production build") }
+    if not $sha_pass { $warnings = ($warnings | append "agent_sha256_real: sha256 is a repeated-character placeholder — replace before production build") }
   }
 
   # 12. agent_version_semver
@@ -641,6 +641,18 @@ def "main run" [
   let pub_result = (main publish $image_path --backend $backend --dry-run=$dry_run)
   # Extract published URL from pub_result
   let published_url = $pub_result | get url? | default ""
+  # Write published info back into the receipt so downstream agents can locate the image URL
+  if $receipt_path != "" and ($receipt_path | path exists) {
+    let receipt = open $receipt_path
+    let updated_receipt = $receipt | merge {
+      published: {
+        url:          ($pub_result.url?     | default "")
+        backend:      ($pub_result.backend? | default $backend)
+        published_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+      }
+    }
+    $updated_receipt | to json | save --force $receipt_path
+  }
   # 3. deploy — pass published_url via --image so the Vultr adapter gets export_url
   let dep_result = if $published_url != "" {
     (main deploy $manifest_file --provider $provider --image $published_url --dry-run=$dry_run)
