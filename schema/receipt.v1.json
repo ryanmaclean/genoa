@@ -190,6 +190,26 @@
         }
       }
     },
+    "published": {
+      "type": "object",
+      "description": "Populated by `genoa run` after a successful publish step. Absent if image was not published.",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Public URL where the image was uploaded (e.g. an R2 or S3 object URL)."
+        },
+        "backend": {
+          "type": "string",
+          "description": "Publish backend used. Example: 'r2', 's3', 'stub'."
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC timestamp of when the publish completed."
+        }
+      }
+    },
     "metadata": {
       "type": "object",
       "description": "Pass-through metadata from the manifest.",
