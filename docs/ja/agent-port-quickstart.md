@@ -17,12 +17,13 @@ nu genoa.nu schema
 ```
 nu genoa.nu describe examples/agent-port-template.toml
 ```
-解決済みマニフェストのサマリーを表示します。
+テンプレートマニフェストの全セクションと解決済み値、プレースホルダーフィールドを含む完全なサマリーを表示します。
 
 ## 2. テンプレートを修正する
 
 `examples/agent-port-template.toml` をコピーして以下を変更します:
 - `image.name`、`image.version`
+- `image.output_dir`（成果物の出力先ディレクトリ、デフォルト `"./out"`）
 - `agent.name`、`agent.version`
 - `agent.source.type`（`url` / `gitea_release` / `local_path`）
 - `agent.source.url` と `sha256`
@@ -52,19 +53,26 @@ nu genoa.nu build your-agent.toml --dry-run
 ```
 nu genoa.nu build your-agent.toml
 ```
-FreeBSD ビルドホストが必要です。リモート SSH ディスパッチには `target.build_host` を設定してください。  
-出力: `out/<name>-<version>.raw` と `out/<name>-<version>.receipt.json`
+FreeBSD ビルドホストが必要です。リモート SSH ディスパッチには `target.build_host` を設定してください。リモートビルド後、genoa はイメージとレシートをローカルの `[image].output_dir` へ SCP で取得します。
+
+`[image].output_dir`（デフォルト `./out`）への出力:
+```
+out/<name>-<version>.raw
+out/<name>-<version>.receipt.json
+```
+
+レシートは v1 準拠の JSON プロベナンスエンベロープで、`image`、`build`、`agent`、`hashes`、`claims` のネストされたオブジェクトを含みます。デプロイステップが自動的に読み込むため、このファイルを保持してください。
 
 ## 6. デプロイ
 
 ```
 VULTR_API_KEY=<key> nu genoa.nu deploy your-agent.toml
 ```
-ビルドレシートを自動的に読み込みます。返却値: `{ provider, image_id, status, receipt }`
+`[image].output_dir` からビルドレシートを自動的に読み込みます。返却値: `{ provider, image_id, status, receipt }`
 
 ## 7. ワンショット
 
 ```
 nu genoa.nu run your-agent.toml
 ```
-ビルド → パブリッシュ → デプロイを連結します。CI 向けに単一の終了コードを返します。
+validate → build → publish → deploy を連結します。CI 向けに単一の終了コードを返します。

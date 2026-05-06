@@ -44,7 +44,7 @@ VULTR_API_KEY=<key> nu genoa.nu deploy examples/freebsd-vultr-aarch64.toml
 nu genoa.nu run examples/freebsd-vultr-aarch64.toml
 ```
 
-ビルド → パブリッシュ → デプロイを連結します。結果を統合 JSON で返します。
+validate → build → publish → deploy を連結します。結果を統合 JSON で返します。
 
 ## コアコンセプト
 
@@ -52,7 +52,11 @@ nu genoa.nu run examples/freebsd-vultr-aarch64.toml
 
 **プロファイル（`uefi` / `kboot`）:** ブートローダー戦略。`uefi` = `loader.efi` + GPT ESP。`kboot` = Linux initrd 内の `loader.kboot` — ext4 のみ対応プロバイダー（Linode、旧 AWS 等）の要件を満たしながら、UFS2 上で実際の FreeBSD を動作させます。
 
-**ビルドレシート（JSON）:** プロベナンスエンベロープ — イメージ sha256、マニフェスト sha256、エージェントソースと sha256、ビルドタイムスタンプ、ランダムな `receipt_id`。
+**ビルドレシート（JSON）:** v1 準拠のプロベナンスエンベロープ。`image`、`build`、`agent`、`hashes`、`claims` のネストされたオブジェクトで構成されます。イメージ sha256、マニフェスト sha256、エージェントソースと sha256、ビルドタイムスタンプ、ランダムな `receipt_id`、および fleet-eval 連携用の検証可能な claims 配列を含みます。
+
+**署名:** マニフェストに `signing.tool = "signify"` が設定されている場合、genoa はビルド完了後に署名設定を読み込んでイメージに署名します。署名機能は実装済みであり、予約フィールドではありません。
+
+**出力ディレクトリ:** `image.output_dir`（デフォルト: `"./out"`）が成果物の格納先を決定します。ビルド成功後、生のイメージと JSON レシートがこのディレクトリに書き込まれます。
 
 **プロバイダーカタログ:** `catalog/providers.v1.json` に 40 エントリ。`deployment_path` フィールドがアダプタディスパッチを制御します: `rescue-dd` → `linode.nu`、`snapshot-url` → `vultr.nu`、`byoi-api` → `oci.nu`。
 
@@ -65,7 +69,7 @@ nu genoa.nu run examples/freebsd-vultr-aarch64.toml
 build_host = "builder@fb-vm-24:2225"
 ```
 
-genoa はマニフェストを `scp` で転送し、SSH 経由でリモートの `nu genoa.nu build` を実行して、構造化された結果を返します。
+genoa はマニフェストを SCP で転送し、SSH 経由でリモートの `nu genoa.nu build` を実行します。ビルド完了後、イメージとレシートをローカルの `[image].output_dir`（デフォルト `./out`）へ SCP で取得します。
 
 ## テスト
 
@@ -80,17 +84,17 @@ nu test/smoke.nu
 ```nushell
 genoa catalog                            # catalog/providers.v1.json からプロバイダーを一覧表示
 genoa schema                             # マニフェストスキーマ（JSON Schema）を出力
-genoa describe <manifest.toml>           # パース + 検証してプラン JSON を表示
+genoa describe <manifest.toml>           # マニフェストをパースし、全セクションと解決済み値の完全なサマリーを表示
 genoa validate <manifest.toml>           # マニフェストをスキーマに対して検証し結果を返す
 genoa build <manifest.toml> [--profile uefi|kboot] [--dry-run]
 genoa publish <image> [--backend r2|s3|gitea]
 genoa deploy <manifest.toml> --provider <id>
 genoa verify <image> <receipt.json>
-genoa status <receipt.json>              # ビルドレシートからデプロイ状況を表示
+genoa status [--dir <パス>]              # レシートをスキャンし、ビルドの集約サマリーを返す
 genoa run <manifest.toml> [--provider <id>] [--backend r2|s3|gitea] [--dry-run]
 ```
 
-`run` はエンドツーエンドのパイプラインです: build → publish → deploy を連結し、統合 JSON 結果を返します。
+`run` はエンドツーエンドのパイプラインです: validate → build → publish → deploy を連結し、統合 JSON 結果を返します。
 
 ## 関連ドキュメント
 
