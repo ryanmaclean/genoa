@@ -227,6 +227,7 @@ def "main build" [
       os_version: ($m.target?.os_version? | default "unknown")
       arch: ($m.target?.arch? | default "unknown")
       genoa_version: "v0.1.0"
+      profile: $p
       dry_run: $dry_run
     }
     agent: {
@@ -663,12 +664,17 @@ def "main verify" [receipt_file: string, --image: string = ""] {
 }
 def "main status" [--dir: string = "./out"] {
   # Scan the configured output directory for receipt files
-  let out_receipts = if ($dir | path exists) {
-    try { ls $"($dir)/*.receipt.json" | get name } catch { [] }
+  let dir_exists = ($dir | path exists)
+  let out_receipts = if $dir_exists {
+    let g = try { glob $"($dir)/*.receipt.json" } catch { [] }
+    if ($g | is-empty) {
+      # Fallback: ls-based scan in case glob path resolution differs
+      try { ls $dir | where name =~ "receipt\\.json" | get name } catch { [] }
+    } else { $g }
   } else { [] }
 
   # Also scan current directory (non-recursive) for receipts placed at the root
-  let cur_receipts = try { ls *.receipt.json | get name } catch { [] }
+  let cur_receipts = try { glob "*.receipt.json" } catch { [] }
 
   let all_receipts = ($out_receipts | append $cur_receipts | uniq)
 
@@ -676,8 +682,10 @@ def "main status" [--dir: string = "./out"] {
     return ({
       action: "status"
       receipts_found: 0
-      message: "No receipts found. Run `genoa build <manifest>` to create one."
-      tip: "Receipts are written as <manifest-basename>.receipt.json after each build."
+      scanned_dir: $dir
+      dir_exists: $dir_exists
+      message: (if $dir_exists { $"No receipts found in ($dir). Run `genoa build <manifest>` to create one." } else { $"Directory ($dir) does not exist. Run `genoa build` first." })
+      tip: "Receipts are written to <image.output_dir>/<name>-<version>.receipt.json (default: ./out/)"
     } | to json --indent 2)
   }
 

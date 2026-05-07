@@ -104,14 +104,13 @@ export def linode_deploy [
     ]
 
     return {
+      action: "would-run"
       provider: "linode"
       mode: "dry-run"
-      path: "Path 3: Rescue + dd (officially documented)"
-      manifest: $manifest
+      strategy: "rescue-dd"
       image_name: $image_name
       image_path: $image_path
       image_sha256: $image_sha256
-      image_size_bytes: (if ($image_path | path exists) { ls $image_path | get 0.size } else { 0 })
       plan: {
         steps: $steps
         warnings: $warnings
