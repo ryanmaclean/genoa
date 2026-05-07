@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - 'examples/**'
+      - 'schema/**'
+      - 'genoa.nu'
   pull_request:
     branches: [main]
     paths:
       - 'examples/**'
+      - 'schema/**'
+      - 'genoa.nu'
 
 permissions:
   contents: read
@@ -34,7 +38,24 @@ jobs:
 
       - name: Validate all example manifests
         run: |
+          failed=0
           for f in examples/*.toml; do
             echo "Validating $f..."
-            nu genoa.nu validate "$f" | nu -c 'from json | if ($in.valid) { exit 0 } else { print $in.errors; exit 1 }'
+            nu genoa.nu validate "$f" > /tmp/result.json
+            if python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/result.json'))
+          errs = d.get('errors', [])
+          warns = d.get('warnings', [])
+          print('  valid:', d.get('valid'))
+          for e in errs: print('  ERROR:', e)
+          for w in warns: print('  warn:', w)
+          sys.exit(0 if d.get('valid') else 1)
+          "; then
+              echo "  PASS: $f"
+            else
+              echo "  FAIL: $f"
+              failed=1
+            fi
           done
+          exit $failed
