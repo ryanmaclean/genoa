@@ -29,7 +29,8 @@ def run_test [name: string, body: closure] {
 # Usage: genoa "describe 'examples/foo.toml'"
 # ---------------------------------------------------------------------------
 def genoa [cmd: string] {
-  let script = $"source ($GENOA); ($cmd) | to json"
+  # main commands now output JSON strings directly; parse via from json
+  let script = $"source ($GENOA); ($cmd)"
   ^nu -c $script | from json
 }
 
@@ -230,7 +231,7 @@ let tests = [
     let tmp = (^mktemp -d | str trim)
     # Copy genoa.nu into temp dir so source works without relative-path issues
     ^cp genoa.nu $tmp
-    let script = $"cd ($tmp); source genoa.nu; main status | to json"
+    let script = $"cd ($tmp); source genoa.nu; main status"
     let rec = (^nu -c $script | from json)
     ^rm -rf $tmp
     let found = ($rec | get receipts_found)

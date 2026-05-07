@@ -1,11 +1,11 @@
 #!/usr/bin/env nu
 
 def "main catalog" [] {
-  open "catalog/providers.v1.json"
+  open "catalog/providers.v1.json" | to json --indent 2
 }
 
 def "main schema" [] {
-  open "schema/manifest.v1.json"
+  open "schema/manifest.v1.json" | to json --indent 2
 }
 
 def "main describe" [manifest_file: string] {
@@ -46,7 +46,7 @@ def "main describe" [manifest_file: string] {
     provider:       ($m.deploy?.provider? | default "")
     signing:        ($m.signing?.tool?    | default "none")
     schema_version: ($m.schema_version?   | default "")
-  }
+  } | to json --indent 2
 }
 
 def "main build" [
@@ -170,7 +170,7 @@ def "main build" [
   let manifest_sha256 = try {
     ^sha256 -q $manifest_file | str trim  # FreeBSD
   } catch {
-    try { ^sha256sum $manifest_file | split row " " | first | str trim } catch { "PLACEHOLDER" }
+    try { ^sha256sum $manifest_file | split row " " | first | str trim } catch { "PLACEHOLDER_DRY_RUN" }
   }
 
   # Signing step — runs after image write, before receipt
@@ -237,6 +237,7 @@ def "main build" [
     hashes: {
       image_sha256: $image_sha256
       manifest_sha256: $manifest_sha256
+      manifest_path: $manifest_file
     }
     signing: $sign_result
     claims: (do {
@@ -279,7 +280,7 @@ def "main build" [
   $receipt | save --force $receipt_path
 
   # Return build plan with receipt_path appended
-  $build_record | merge {receipt_path: $receipt_path}
+  $build_record | merge {receipt_path: $receipt_path} | to json --indent 2
 }
 
 def "main deploy" [
@@ -308,10 +309,10 @@ def "main deploy" [
     _              => null
   }
   if $afile == null {
-    return {action: "failed", reason: $"no adapter for deployment_path: ($path); add an adapter file or update the catalog entry", provider: $pid}
+    return ({action: "failed", reason: $"no adapter for deployment_path: ($path); add an adapter file or update the catalog entry", provider: $pid} | to json --indent 2)
   }
   if not ($afile | path exists) {
-    return {action: "failed", reason: $"adapter file not found: ($afile)", provider: $pid}
+    return ({action: "failed", reason: $"adapter file not found: ($afile)", provider: $pid} | to json --indent 2)
   }
 
   # Resolve image path: --image > --from-receipt > output_dir + manifest fields > fallback
@@ -331,11 +332,11 @@ def "main deploy" [
   }
 
   if $path == "rescue-dd" {
-    source adapters/linode.nu; linode_deploy $m $image --dry-run=$dry_run
+    source adapters/linode.nu; linode_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else if $path == "snapshot-url" {
-    source adapters/vultr.nu;  vultr_deploy  $m $image --dry-run=$dry_run
+    source adapters/vultr.nu;  vultr_deploy  $m $image --dry-run=$dry_run | to json --indent 2
   } else {
-    source adapters/oci.nu;    oci_deploy    $m $image --dry-run=$dry_run
+    source adapters/oci.nu;    oci_deploy    $m $image --dry-run=$dry_run | to json --indent 2
   }
 }
 
@@ -349,14 +350,14 @@ def "main validate" [manifest_file: string] {
   $checks = ($checks | append {check: "file_exists", pass: $file_ok, detail: (if $file_ok { $"($manifest_file) is readable" } else { $"file not found: ($manifest_file)" })})
   if not $file_ok {
     $errors = ($errors | append $"file not found: ($manifest_file)")
-    return {
+    return ({
       action: "validate"
       manifest_path: $manifest_file
       valid: false
       checks: $checks
       errors: $errors
       warnings: $warnings
-    }
+    } | to json --indent 2)
   }
 
   let m = open $manifest_file
@@ -503,32 +504,43 @@ def "main validate" [manifest_file: string] {
     checks: $checks
     errors: $errors
     warnings: $warnings
-  }
+  } | to json --indent 2
 }
 
-def "main verify" [image: string, receipt_file: string] {
+def "main verify" [receipt_file: string, --image: string = ""] {
   mut checks = []
   mut errors = []
 
-  # 1. image_exists
-  let image_ok = ($image | path exists)
-  # Peek at receipt to detect dry-run before deciding how to treat a missing image
+  # Peek at receipt first to resolve image path if not provided
   let receipt_ok_pre = ($receipt_file | path exists)
   let is_dry_run_receipt = if $receipt_ok_pre {
     let _rv = open $receipt_file
     $_rv.build?.dry_run? | default ($_rv.dry_run? | default false)
   } else { false }
 
-  let image_check = if $image_ok {
-    {check: "image_exists", pass: true, detail: $"($image) exists"}
-  } else if $is_dry_run_receipt {
-    {check: "image_exists", pass: true, detail: $"dry-run receipt — image not yet built: ($image)"}
+  # Derive actual image path: --image flag > receipt.image.output_path
+  let actual_image = if $image != "" {
+    $image
+  } else if $receipt_ok_pre {
+    let _r_tmp = open $receipt_file
+    $_r_tmp.image?.output_path? | default ""
   } else {
-    {check: "image_exists", pass: false, detail: $"image not found: ($image)"}
+    ""
+  }
+
+  # 1. image_exists
+  let image_ok = if $actual_image != "" { ($actual_image | path exists) } else { false }
+
+  let image_check = if $image_ok {
+    {check: "image_exists", pass: true, detail: $"($actual_image) exists"}
+  } else if $is_dry_run_receipt {
+    {check: "image_exists", pass: true, detail: $"dry-run receipt — image not yet built: ($actual_image)"}
+  } else {
+    {check: "image_exists", pass: false, detail: $"image not found: ($actual_image)"}
   }
   $checks = ($checks | append $image_check)
   if not $image_ok and not $is_dry_run_receipt {
-    $errors = ($errors | append $"image not found: ($image)")
+    $errors = ($errors | append $"image not found: ($actual_image)")
   }
 
   # 2. receipt_exists
@@ -538,15 +550,15 @@ def "main verify" [image: string, receipt_file: string] {
 
   # Early return if receipt is missing, or image is missing and not a dry-run receipt
   if not $receipt_ok or (not $image_ok and not $is_dry_run_receipt) {
-    return {
+    return ({
       action: "verify"
-      image: $image
+      image: $actual_image
       receipt_file: $receipt_file
       receipt_id: "unknown"
       checks: $checks
       valid: false
       errors: $errors
-    }
+    } | to json --indent 2)
   }
 
   let r = open $receipt_file
@@ -564,9 +576,9 @@ def "main verify" [image: string, receipt_file: string] {
   } else {
     ($r.manifest_sha256? | default "")
   }
+  # Read manifest_path from receipt.hashes.manifest_path (v1 schema) or top-level fallback
   let manifest_path = if ("hashes" in $r) {
-    # v1 schema: manifest path is top-level in image or in a manifest_path field
-    ($r.manifest_path? | default "")
+    ($r.hashes?.manifest_path? | default ($r.manifest_path? | default ""))
   } else {
     ($r.manifest_path? | default "")
   }
@@ -586,15 +598,15 @@ def "main verify" [image: string, receipt_file: string] {
   $checks = ($checks | append {check: "receipt_parse", pass: $parse_ok, detail: $parse_detail})
   if not $parse_ok { $errors = ($errors | append $parse_detail) }
 
-  # 4. image_sha256_match — compute sha256 of the image file
-  let img_sha256_check = if $image_sha256 == "dry-run-placeholder" {
+  # 4. image_sha256_match — skip for any dry-run placeholder variant
+  let img_sha256_check = if ($image_sha256 == "PLACEHOLDER_DRY_RUN") or ($image_sha256 == "PLACEHOLDER") or ($image_sha256 == "dry-run-placeholder") {
     {check: "image_sha256", pass: true, detail: "dry-run receipt — sha256 not computed; skipping"}
   } else {
     let computed_image_sha256 = if $image_ok {
       if $nu.os-info.name == "macos" {
-        ^shasum -a 256 $image | str trim | split row " " | first
+        ^shasum -a 256 $actual_image | str trim | split row " " | first
       } else {
-        ^sha256sum $image | str trim | split row " " | first
+        ^sha256sum $actual_image | str trim | split row " " | first
       }
     } else { "" }
 
@@ -641,15 +653,14 @@ def "main verify" [image: string, receipt_file: string] {
 
   {
     action: "verify"
-    image: $image
+    image: $actual_image
     receipt_file: $receipt_file
     receipt_id: $receipt_id
     checks: $checks
     valid: ($errors | is-empty)
     errors: $errors
-  }
+  } | to json --indent 2
 }
-
 def "main status" [--dir: string = "./out"] {
   # Scan the configured output directory for receipt files
   let out_receipts = if ($dir | path exists) {
@@ -662,12 +673,12 @@ def "main status" [--dir: string = "./out"] {
   let all_receipts = ($out_receipts | append $cur_receipts | uniq)
 
   if ($all_receipts | is-empty) {
-    return {
+    return ({
       action: "status"
       receipts_found: 0
       message: "No receipts found. Run `genoa build <manifest>` to create one."
       tip: "Receipts are written as <manifest-basename>.receipt.json after each build."
-    }
+    } | to json --indent 2)
   }
 
   let parsed = $all_receipts | each { |path|
@@ -714,7 +725,7 @@ def "main status" [--dir: string = "./out"] {
     } else {
       ["Images ready. Run: nu genoa.nu deploy <manifest.toml> to deploy."]
     })
-  }
+  } | to json --indent 2
 }
 
 def "main publish" [
@@ -725,7 +736,7 @@ def "main publish" [
   if not ($image | path exists) {
     # dry-run mode: emit plan without error
     if $dry_run {
-      return {action: "would-run", image: $image, backend: $backend, note: "image not yet built — run genoa build first"}
+      return ({action: "would-run", image: $image, backend: $backend, note: "image not yet built — run genoa build first"} | to json --indent 2)
     }
     error make {msg: $"image not found: ($image)"}
   }
@@ -743,9 +754,9 @@ def "main publish" [
     } catch { |e|
       {action: "failed", reason: $"publish.nu invocation failed: ($e.msg)", image: $image, backend: $backend} | to json
     }
-    try { $result_json | from json } catch { {action: "failed", reason: "publish.nu output not parseable", image: $image, backend: $backend} }
+    try { $result_json | from json | to json --indent 2 } catch { {action: "failed", reason: "publish.nu output not parseable", image: $image, backend: $backend} | to json --indent 2 }
   } else {
-    {action: "failed", reason: "publish.nu not yet available", image: $image, backend: $backend}
+    {action: "failed", reason: "publish.nu not yet available", image: $image, backend: $backend} | to json --indent 2
   }
 }
 
@@ -756,19 +767,19 @@ def "main run" [
   --dry-run
 ] {
   # Step 0: validate — abort if manifest is invalid
-  let validate_result = main validate $manifest_file
+  let validate_result = main validate $manifest_file | from json
   if not $validate_result.valid {
-    return {action: "failed", step: "validate", errors: $validate_result.errors}
+    return ({action: "failed", step: "validate", errors: $validate_result.errors} | to json --indent 2)
   }
-  # 1. build
-  let build_result = (main build $manifest_file --dry-run=$dry_run)
+  # 1. build (returns JSON string — parse for record access)
+  let build_result = (main build $manifest_file --dry-run=$dry_run | from json)
   # 2. publish (uses receipt from build)
   let receipt_path = ($build_result | get receipt_path? | default "")
   let image_path = if $receipt_path != "" and ($receipt_path | path exists) {
     let r = open $receipt_path
     $r.image?.output_path? | default ($r.image_path? | default "/tmp/genoa.raw")
   } else { "/tmp/genoa.raw" }
-  let pub_result = (main publish $image_path --backend $backend --dry-run=$dry_run)
+  let pub_result = (main publish $image_path --backend $backend --dry-run=$dry_run | from json)
   # Extract published URL from pub_result
   let published_url = $pub_result | get url? | default ""
   # Write published info back into the receipt so downstream agents can locate the image URL
@@ -785,13 +796,13 @@ def "main run" [
   }
   # 3. deploy — pass published_url via --image so the Vultr adapter gets export_url
   let dep_result = if $published_url != "" {
-    (main deploy $manifest_file --provider $provider --image $published_url --dry-run=$dry_run)
+    (main deploy $manifest_file --provider $provider --image $published_url --dry-run=$dry_run | from json)
   } else {
-    (main deploy $manifest_file --provider $provider --dry-run=$dry_run)
+    (main deploy $manifest_file --provider $provider --dry-run=$dry_run | from json)
   }
   # Return combined pipeline result with top-level convenience fields for agents
   {
-    pipeline:      "validate→build→publish→deploy"
+    pipeline:      "validate->build->publish->deploy"
     valid:         ($validate_result.valid? | default false)
     receipt_path:  ($build_result.receipt_path? | default "")
     image_path:    $image_path
@@ -799,9 +810,8 @@ def "main run" [
     build:         $build_result
     publish:       $pub_result
     deploy:        $dep_result
-  }
+  } | to json --indent 2
 }
-
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
