@@ -280,12 +280,25 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15}
     }
 
+    # Step 15b — fetch FreeBSD base tarball before extraction
+    let base_txz = $"/tmp/FreeBSD-($os_ver)-($arch)-base.txz"
+    let step15b = run_step {
+        step: "15b"
+        label: "fetch_freebsd_base"
+        action: "would-run"
+        cmd: $"fetch -o ($base_txz) https://download.freebsd.org/releases/($linux_arch)/($os_ver)/base.txz"
+        description: $"Download FreeBSD ($os_ver) ($arch) base.txz to ($base_txz)"
+    } $dry_run
+    if $step15b.action == "failed" {
+        return {action: "build-failed", failed_step: $step15b.label, exit_code: $step15b.exit_code, detail: $step15b}
+    }
+
     # Step 16
     let step16 = run_step {
         step: 16
         label: "extract_freebsd_base"
         action: "would-run"
-        cmd: $"tar -xf /path/to/FreeBSD-($os_ver)-($arch)-base.txz -C /mnt/freebsd"
+        cmd: $"tar -xf ($base_txz) -C /mnt/freebsd"
         description: "Extract FreeBSD base system to UFS2 root"
         notes: [
             "Must source FreeBSD release media (base.txz, kernel.txz)"
@@ -387,7 +400,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         steps: [
             $step1 $step2 $step3 $step4 $step5 $step6 $step7
             $step8 $step9 $step10 $step11 $step12 $step13
-            $step14 $step15 $step16 $step17 $step18 $step19 $step20
+            $step14 $step15 $step15b $step16 $step17 $step18 $step19 $step20
         ]
 
         ext4_compliance: "Partition p2 is ext4 (without modern features). Satisfies ext4-only provider requirements."

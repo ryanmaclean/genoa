@@ -151,12 +151,12 @@ let tests = [
     $count
   })
 
-  # build_steps_kboot — kboot dry-run has exactly 20 steps
+  # build_steps_kboot — kboot dry-run has exactly 21 steps (step15b=fetch_freebsd_base added)
   (run_test "build_steps_kboot" {
     let rec = (genoa "main build 'examples/freebsd-linode-amd64.toml' --profile kboot --dry-run")
     let count = ($rec | get steps | length)
-    if $count != 20 {
-      error make {msg: $"expected 20 kboot steps got ($count)"}
+    if $count != 21 {
+      error make {msg: $"expected 21 kboot steps got ($count)"}
     }
     $count
   })

@@ -146,7 +146,7 @@ def "main build" [
   }
 
   let build_result = if not ($profile_file | path exists) {
-    {action: "stub", reason: $"($p) profile not yet implemented", profile: $p}
+    {action: "failed", reason: $"unknown profile: ($p); supported: uefi, kboot", profile: $p}
   } else if $p == "kboot" {
     source profiles/kboot.nu
     kboot_build $m $dry_run
@@ -308,10 +308,10 @@ def "main deploy" [
     _              => null
   }
   if $afile == null {
-    return {action: "stub", reason: $"no adapter for deployment_path: ($path)", provider: $pid}
+    return {action: "failed", reason: $"no adapter for deployment_path: ($path); add an adapter file or update the catalog entry", provider: $pid}
   }
   if not ($afile | path exists) {
-    return {action: "stub", reason: $"($afile) not found", provider: $pid}
+    return {action: "failed", reason: $"adapter file not found: ($afile)", provider: $pid}
   }
 
   # Resolve image path: --image > --from-receipt > output_dir + manifest fields > fallback
@@ -731,11 +731,11 @@ def "main publish" [
         ^nu publish.nu $image --backend $backend | str trim
       }
     } catch { |e|
-      {action: "stub", reason: $"publish.nu invocation failed: ($e.msg)", image: $image, backend: $backend} | to json
+      {action: "failed", reason: $"publish.nu invocation failed: ($e.msg)", image: $image, backend: $backend} | to json
     }
-    try { $result_json | from json } catch { {action: "stub", reason: "publish.nu output not parseable", image: $image, backend: $backend} }
+    try { $result_json | from json } catch { {action: "failed", reason: "publish.nu output not parseable", image: $image, backend: $backend} }
   } else {
-    {action: "stub", reason: "publish.nu not yet available", image: $image, backend: $backend}
+    {action: "failed", reason: "publish.nu not yet available", image: $image, backend: $backend}
   }
 }
 

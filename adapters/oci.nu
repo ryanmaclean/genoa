@@ -152,7 +152,7 @@ export def oci_deploy [
   } else {
     let out = ($image_path | str replace --regex '\.[^.]+$' '.qcow2')
     let conv = convert_to_qcow2 $image_path $out false
-    if $conv.action == "failed" or $conv.action == "stub" {
+    if $conv.action == "failed" {
       return {action: "failed", step: "convert_to_qcow2", detail: $conv}
     }
     $out

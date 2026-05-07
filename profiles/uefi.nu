@@ -362,7 +362,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     # emit_receipt was removed from this profile (D2 cleanup).
 
     {
-        schema_version: "1"
+        schema_version: "v1"
         profile: "uefi"
         dry_run: $dry_run
         validation: $validation
