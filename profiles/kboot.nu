@@ -46,6 +46,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
     let hostname = $manifest.network?.hostname? | default "smolbsd"
     let image_size_mb = $manifest.image?.size_mb? | default 2048
     let image_size_gb = ($image_size_mb / 1024)
+    let image_size_arg = ($image_size_gb | into string) + "G"
     let image_name = $manifest.image?.name? | default "genoa"
     let image_version = $manifest.image?.version? | default "v0.0.0"
     let image_format = $manifest.image?.format? | default "raw"
@@ -83,8 +84,8 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         step: 1
         label: "create_disk"
         action: "would-run"
-        cmd: $"truncate -s ($image_size_gb)G ($image_path)"
-        description: $"Create ($image_size_gb)G raw disk image"
+        cmd: $"truncate -s ($image_size_arg) ($image_path)"
+        description: $"Create ($image_size_arg) raw disk image"
     } $dry_run
     if $step1.action == "failed" {
         return {action: "build-failed", failed_step: $step1.label, exit_code: $step1.exit_code, detail: $step1}

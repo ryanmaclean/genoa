@@ -62,7 +62,8 @@ def "main build" [
     error make {msg: $"manifest file not found: ($manifest_file)"}
   }
   let m = open $manifest_file
-  let p = ($m.profile? | default $profile)
+  # CLI --profile flag takes precedence over manifest profile field
+  let p = if ($profile | is-not-empty) { $profile } else { $m.profile? | default "uefi" }
   let profile_file = $"profiles/($p).nu"
 
   # Derive receipt path from manifest basename
