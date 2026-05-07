@@ -223,7 +223,7 @@ def "main build" [
     }
     build: {
       host: (try { ^uname -n | str trim } catch { "unknown" })
-      builder_type: "dry-run"
+      builder_type: (if $dry_run { "dry-run" } else if $is_freebsd { "genoa-local" } else { "genoa-crosshost" })
       os_version: ($m.target?.os_version? | default "unknown")
       arch: ($m.target?.arch? | default "unknown")
       genoa_version: "v0.1.0"
@@ -256,9 +256,9 @@ def "main build" [
         }
         {
           claim: $"agent name is ($m.agent?.name? | default "unknown")"
-          probe: $"genoa describe ($manifest_file) | from json | get agent_name"
+          probe: $"nu genoa.nu describe ($manifest_file) | from json | get agent | get name"
           expect: ($m.agent?.name? | default "unknown")
-          status: "verified"
+          status: "asserted"
         }
         {
           claim: $"image format is ($m.image?.format? | default "raw")"
@@ -268,9 +268,9 @@ def "main build" [
         }
         {
           claim: $"target os is ($m.target?.os? | default "freebsd")"
-          probe: "genoa describe <manifest> | from json | get target_os"
+          probe: $"nu genoa.nu describe ($manifest_file) | from json | get target | get os"
           expect: ($m.target?.os? | default "freebsd")
-          status: "verified"
+          status: "asserted"
         }
       ]
     })
@@ -673,22 +673,31 @@ def "main status" [--dir: string = "./out"] {
   let parsed = $all_receipts | each { |path|
     let r = try { open $path } catch { null }
     if $r == null { return {path: $path, status: "unreadable"} }
+    # v1 nested fields with v0 flat fallbacks
+    let img_path_v = $r.image?.output_path? | default ($r.image_path? | default "")
+    let is_dry_v   = $r.build?.dry_run?     | default ($r.dry_run?    | default false)
+    let prof_v     = $r.build?.profile?     | default ($r.profile?    | default "unknown")
+    let schema_v   = $r.schema_version? | default "unknown"
+    let img_sha_v  = $r.hashes?.image_sha256? | default ($r.image_sha256? | default "")
     {
       path: $path
       receipt_id: ($r.receipt_id? | default "unknown")
-      image_path: ($r.image_path? | default "unknown")
-      image_exists: ($r.image_path? | default "" | path exists)
-      profile: ($r.profile? | default "unknown")
+      image_path: $img_path_v
+      image_exists: ($img_path_v | path exists)
+      profile: $prof_v
       built_at: ($r.built_at? | default "unknown")
-      dry_run: ($r.dry_run? | default false)
+      dry_run: $is_dry_v
       manifest_path: ($r.manifest_path? | default "unknown")
-      sha256_placeholder: (($r.image_sha256? | default "") == "dry-run-placeholder")
+      sha256_placeholder: ($img_sha_v == "dry-run-placeholder" or $img_sha_v == "PLACEHOLDER_DRY_RUN")
+      schema_version: $schema_v
+      legacy: ($schema_v != "v1")
     }
   }
 
-  let real_builds = ($parsed | where dry_run == false)
-  let dry_runs = ($parsed | where dry_run == true)
-  let images_on_disk = ($parsed | where image_exists == true)
+  let real_builds     = ($parsed | where dry_run == false)
+  let dry_runs        = ($parsed | where dry_run == true)
+  let images_on_disk  = ($parsed | where image_exists == true)
+  let legacy_receipts = ($parsed | where legacy == true)
 
   {
     action: "status"
@@ -696,6 +705,7 @@ def "main status" [--dir: string = "./out"] {
     real_builds: ($real_builds | length)
     dry_runs: ($dry_runs | length)
     images_on_disk: ($images_on_disk | length)
+    legacy_receipts: ($legacy_receipts | length)
     receipts: $parsed
     next_steps: (if ($real_builds | is-empty) {
       ["No real builds yet. Run: nu genoa.nu build <manifest.toml>"]
@@ -779,13 +789,16 @@ def "main run" [
   } else {
     (main deploy $manifest_file --provider $provider --dry-run=$dry_run)
   }
-  # Return combined pipeline result
+  # Return combined pipeline result with top-level convenience fields for agents
   {
-    pipeline: "build→publish→deploy"
-    build:   $build_result
-    publish: $pub_result
+    pipeline:      "validate→build→publish→deploy"
+    valid:         ($validate_result.valid? | default false)
+    receipt_path:  ($build_result.receipt_path? | default "")
+    image_path:    $image_path
     published_url: $published_url
-    deploy:  $dep_result
+    build:         $build_result
+    publish:       $pub_result
+    deploy:        $dep_result
   }
 }
 

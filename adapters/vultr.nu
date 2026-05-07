@@ -27,7 +27,7 @@ export def vultr_deploy [
   image_path: string
   --dry-run
 ] {
-  let image_name = if ("name" in $manifest) { $manifest.name } else { "genoa-freebsd" }
+  let image_name = $manifest.image?.name? | default "genoa-freebsd"
   let region = if ("deploy" in $manifest and "region" in $manifest.deploy) {
     $manifest.deploy.region
   } else if ("region" in $manifest) {
@@ -45,12 +45,12 @@ export def vultr_deploy [
 
   # Dry-run: return plan without credentials or API calls
   if $dry_run {
-    let image_url_hint = if ("image" in $manifest and "export_url" in $manifest.image) {
+    let image_url_resolved = if ("image" in $manifest and "export_url" in $manifest.image) {
       $manifest.image.export_url
     } else if ($image_path | str starts-with "https://") {
       $image_path
     } else {
-      "(run `genoa publish` first to get an HTTPS URL)"
+      ""
     }
 
     return {
@@ -58,7 +58,7 @@ export def vultr_deploy [
       provider: "vultr"
       dry_run: true
       image_name: $image_name
-      image_url: $image_url_hint
+      image_url: $image_url_resolved
       region: $region
       plan: $plan
       steps: [
@@ -67,7 +67,7 @@ export def vultr_deploy [
           action: "would-run"
           command: "vultr-cli snapshot create-url --url <url>"
           description: "Create snapshot from HTTPS URL"
-          args: { url: $image_url_hint, description: $image_name }
+          args: { url: $image_url_resolved, description: $image_name }
         }
         {
           step: 2

@@ -8,22 +8,12 @@ export def linode_deploy [
   image_path: string
   --dry-run        # Return the deployment plan without executing any linode-cli calls
 ] {
-  let image_name = ($manifest | get name? | default "genoa-freebsd")
+  let image_name = ($manifest | get image?.name? | default "genoa-freebsd")
   let region     = ($manifest | get deploy?.region? | default "us-east")
   let plan       = ($manifest | get deploy?.plan?   | default "g6-nanog-1")
   let image_url  = ($manifest | get image_url?      | default "")
 
-  # Verify image exists
-  if not ($image_path | path exists) {
-    return {
-      action: "failed"
-      error: $"Image file not found: ($image_path)"
-      step: 0
-      provider: "linode"
-    }
-  }
-
-  # Dry-run: return the existing would-run plan unchanged
+  # Dry-run guard FIRST — before any file existence checks
   if $dry_run {
     let image_sha256 = "dry-run-placeholder"
     let steps = [
@@ -121,7 +111,7 @@ export def linode_deploy [
       image_name: $image_name
       image_path: $image_path
       image_sha256: $image_sha256
-      image_size_bytes: (ls $image_path | get 0.size)
+      image_size_bytes: (if ($image_path | path exists) { ls $image_path | get 0.size } else { 0 })
       plan: {
         steps: $steps
         warnings: $warnings
@@ -137,6 +127,16 @@ export def linode_deploy [
   }
 
   # --- Live deploy path ---
+
+  # Verify image exists (live path only — dry-run skips this)
+  if not ($image_path | path exists) {
+    return {
+      action: "failed"
+      error: $"Image file not found: ($image_path)"
+      step: 0
+      provider: "linode"
+    }
+  }
 
   # Step 0 — credential and tool check
   let linode_cli = if ("/opt/homebrew/bin/linode-cli" | path exists) {

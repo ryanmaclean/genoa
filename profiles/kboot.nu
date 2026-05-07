@@ -46,7 +46,11 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
     let hostname = $manifest.network?.hostname? | default "smolbsd"
     let image_size_mb = $manifest.image?.size_mb? | default 2048
     let image_size_gb = ($image_size_mb / 1024)
-    let image_path = $"($manifest.image?.output_dir? | default "./out")/genoa-kboot.raw"
+    let image_name = $manifest.image?.name? | default "genoa"
+    let image_version = $manifest.image?.version? | default "v0.0.0"
+    let image_format = $manifest.image?.format? | default "raw"
+    let output_dir = $manifest.image?.output_dir? | default "./out"
+    let image_path = $"($output_dir)/($image_name)-($image_version).($image_format)"
     let task_endpoint = ""
 
     # Derive arch-specific values from manifest early so all steps can use them
@@ -66,6 +70,12 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         "amd64"   => "amd64"
         "aarch64" => "aarch64"
         _         => "amd64"
+    }
+    let bsd_dl_arch = match $arch {
+        "amd64"   => "amd64"
+        "aarch64" => "arm64"
+        "riscv64" => "riscv64"
+        _         => $arch
     }
 
     # Step 1
@@ -280,22 +290,22 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15}
     }
 
-    # Step 15b — fetch FreeBSD base tarball before extraction
+    # Step 16 — fetch FreeBSD base tarball before extraction
     let base_txz = $"/tmp/FreeBSD-($os_ver)-($arch)-base.txz"
-    let step15b = run_step {
-        step: "15b"
-        label: "fetch_freebsd_base"
-        action: "would-run"
-        cmd: $"fetch -o ($base_txz) https://download.freebsd.org/releases/($linux_arch)/($os_ver)/base.txz"
-        description: $"Download FreeBSD ($os_ver) ($arch) base.txz to ($base_txz)"
-    } $dry_run
-    if $step15b.action == "failed" {
-        return {action: "build-failed", failed_step: $step15b.label, exit_code: $step15b.exit_code, detail: $step15b}
-    }
-
-    # Step 16
     let step16 = run_step {
         step: 16
+        label: "fetch_freebsd_base"
+        action: "would-run"
+        cmd: $"fetch -o ($base_txz) https://download.freebsd.org/releases/($bsd_dl_arch)/($os_ver)/base.txz"
+        description: $"Download FreeBSD ($os_ver) ($arch) base.txz to ($base_txz)"
+    } $dry_run
+    if $step16.action == "failed" {
+        return {action: "build-failed", failed_step: $step16.label, exit_code: $step16.exit_code, detail: $step16}
+    }
+
+    # Step 17
+    let step17 = run_step {
+        step: 17
         label: "extract_freebsd_base"
         action: "would-run"
         cmd: $"tar -xf ($base_txz) -C /mnt/freebsd"
@@ -305,13 +315,13 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
             "Configure boot hint in /mnt/freebsd/boot/loader.conf"
         ]
     } $dry_run
-    if $step16.action == "failed" {
-        return {action: "build-failed", failed_step: $step16.label, exit_code: $step16.exit_code, detail: $step16}
+    if $step17.action == "failed" {
+        return {action: "build-failed", failed_step: $step17.label, exit_code: $step17.exit_code, detail: $step17}
     }
 
-    # Step 17 — render step, no cmd, stays as-is
-    let step17 = {
-        step: 17
+    # Step 18 — render step, no cmd, stays as-is
+    let step18_render = {
+        step: 18
         label: "render_loader_conf"
         action: "render"
         template: "templates/kboot/loader-kboot.conf.tera"
@@ -323,9 +333,9 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         description: "Render loader.kboot config (kernel boot parameters)"
     }
 
-    # Step 18
-    let step18 = run_step {
-        step: 18
+    # Step 19
+    let step19 = run_step {
+        step: 19
         label: "configure_fstab"
         action: "would-run"
         cmd: "cat > /mnt/freebsd/etc/fstab <<'EOF'\n/dev/vtbd0p3  /  ufs  rw  1  1\nEOF"
@@ -335,25 +345,25 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
             "Partition 3 is the UFS2 root configured above"
         ]
     } $dry_run
-    if $step18.action == "failed" {
-        return {action: "build-failed", failed_step: $step18.label, exit_code: $step18.exit_code, detail: $step18}
+    if $step19.action == "failed" {
+        return {action: "build-failed", failed_step: $step19.label, exit_code: $step19.exit_code, detail: $step19}
     }
 
-    # Step 19
-    let step19 = run_step {
-        step: 19
+    # Step 20
+    let step20 = run_step {
+        step: 20
         label: "umount_all"
         action: "would-run"
         cmd: "umount /mnt/freebsd /mnt/kboot"
         description: "Unmount all partitions after configuration"
     } $dry_run
-    if $step19.action == "failed" {
-        return {action: "build-failed", failed_step: $step19.label, exit_code: $step19.exit_code, detail: $step19}
+    if $step20.action == "failed" {
+        return {action: "build-failed", failed_step: $step20.label, exit_code: $step20.exit_code, detail: $step20}
     }
 
-    # Step 20 — real step, unconditional logic, stays as-is
-    let step20 = {
-        step: 20
+    # Step 21 — real step, unconditional logic, stays as-is
+    let step21 = {
+        step: 21
         label: "emit_receipt"
         action: "real"
         description: "Compute sha256 of output image and emit receipt.json"
@@ -361,7 +371,9 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
     }
 
     let plan = {
+        schema_version: "v1"
         profile: "kboot"
+        dry_run: $dry_run
         version: "1.0.0"
         hostname: $hostname
         image_path: $image_path
@@ -400,7 +412,7 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         steps: [
             $step1 $step2 $step3 $step4 $step5 $step6 $step7
             $step8 $step9 $step10 $step11 $step12 $step13
-            $step14 $step15 $step15b $step16 $step17 $step18 $step19 $step20
+            $step14 $step15 $step16 $step17 $step18_render $step19 $step20 $step21
         ]
 
         ext4_compliance: "Partition p2 is ext4 (without modern features). Satisfies ext4-only provider requirements."
