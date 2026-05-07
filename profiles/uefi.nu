@@ -205,12 +205,34 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step3.label, exit_code: $step3.exit_code, detail: $step3}
     }
 
+    # ── step 3b: attach_mdconfig ────────────────────────────────────────────
+    let step3b = if $dry_run {
+        {step: "3b" label: "attach_mdconfig" action: "would-run"
+         cmd: $"mdconfig -a -t vnode -f ($output_image)"
+         description: "Attach raw image as md(4) vnode device for gpart/newfs/mount."}
+    } else {
+        let md_unit = try { ^mdconfig -a -t vnode -f $output_image | str trim } catch { |e| "" }
+        if $md_unit == "" {
+            {step: "3b" label: "attach_mdconfig" action: "failed"
+             exit_code: 1 cmd: $"mdconfig -a -t vnode -f ($output_image)" stderr: "mdconfig returned empty"}
+        } else {
+            {step: "3b" label: "attach_mdconfig" action: "ran"
+             exit_code: 0 cmd: $"mdconfig -a -t vnode -f ($output_image)"
+             md_unit: $md_unit md_dev: $"/dev/($md_unit)"}
+        }
+    }
+    if $step3b.action == "failed" {
+        return {action: "build-failed" failed_step: $step3b.label exit_code: 1 detail: $step3b}
+    }
+    let md_unit = if $dry_run { "md0" } else { $step3b.md_unit }
+    let md_dev  = $"/dev/($md_unit)"
+
     # ── step 4: partition_gpt ───────────────────────────────────────────────
     # Multiple cmds joined with && so failure of any sub-command stops the chain
     let step4_cmds = [
-        $"gpart create -s gpt ($output_image)"
-        $"gpart add -t efi    -s 512M -l esp    ($output_image)"
-        $"gpart add -t freebsd-ufs    -l rootfs ($output_image)"
+        $"gpart create -s gpt ($md_dev)"
+        $"gpart add -t efi    -s 512M -l esp    ($md_dev)"
+        $"gpart add -t freebsd-ufs    -l rootfs ($md_dev)"
     ]
     let step4 = run_step {
         step: 4
@@ -233,7 +255,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         step: 5
         label: "format_esp"
         action: "would-run"
-        cmd: $"newfs_msdos -F 32 -L ESP ($output_image)p1"
+        cmd: $"newfs_msdos -F 32 -L ESP ($md_dev)p1"
         description: "Format ESP partition as FAT32."
     } $dry_run
     if $step5.action == "failed" {
@@ -242,7 +264,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
     # ── step 6: install_efi_loader ──────────────────────────────────────────
     let step6_cmds = [
-        $"mount -t msdosfs ($output_image)p1 /mnt/esp"
+        $"mount -t msdosfs ($md_dev)p1 /mnt/esp"
         $"mkdir -p /mnt/esp/EFI/BOOT"
         $"cp /boot/loader.efi /mnt/esp/EFI/BOOT/($efi_filename)"
         "umount /mnt/esp"
@@ -266,7 +288,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         step: 7
         label: "format_rootfs"
         action: "would-run"
-        cmd: $"newfs -U ($output_image)p2"
+        cmd: $"newfs -U ($md_dev)p2"
         description: "Format rootfs partition as UFS2 with soft-updates (-U)."
     } $dry_run
     if $step7.action == "failed" {
@@ -275,7 +297,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
     # ── step 8: extract_base ────────────────────────────────────────────────
     let step8_cmds = [
-        $"mount ($output_image)p2 /mnt/rootfs"
+        $"mount ($md_dev)p2 /mnt/rootfs"
         $"tar -xf /usr/freebsd-dist/base.txz -C /mnt/rootfs"
     ]
     let step8 = run_step {
@@ -344,7 +366,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     # ── step 15: umount_and_compact ─────────────────────────────────────────
     let step15_cmds = [
         "umount /mnt/rootfs"
-        $"sync ($output_image)"
+        "sync"
     ]
     let step15 = run_step {
         step: 15
@@ -356,6 +378,18 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     } $dry_run
     if $step15.action == "failed" {
         return {action: "build-failed", failed_step: $step15.label, exit_code: $step15.exit_code, detail: $step15}
+    }
+
+    # ── step 15b: detach_mdconfig ───────────────────────────────────────────
+    let step15b = run_step {
+        step: "15b"
+        label: "detach_mdconfig"
+        action: "would-run"
+        cmd: $"mdconfig -d -u ($md_unit)"
+        description: $"Detach md(4) device ($md_dev) from image file."
+    } $dry_run
+    if $step15b.action == "failed" {
+        # Non-fatal — log but continue
     }
 
     # Receipt is written by genoa.nu main build after the profile returns.
@@ -387,6 +421,9 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
             # ── 3. create_disk_image ─────────────────────────────────────────
             $step3
+
+            # ── 3b. attach_mdconfig ──────────────────────────────────────────
+            $step3b
 
             # ── 4. partition_gpt ─────────────────────────────────────────────
             $step4
@@ -453,6 +490,9 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
             # ── 15. umount_and_compact ────────────────────────────────────────
             $step15
+
+            # ── 15b. detach_mdconfig ──────────────────────────────────────────
+            $step15b
         ]
     }
 }

@@ -142,12 +142,12 @@ let tests = [
     $val
   })
 
-  # build_steps_uefi — uefi dry-run has exactly 16 steps (emit_receipt removed; genoa.nu writes receipt)
+  # build_steps_uefi — uefi dry-run has exactly 18 steps (step 3b attach_mdconfig + step 15b detach_mdconfig added)
   (run_test "build_steps_uefi" {
     let rec = (genoa "main build 'examples/freebsd-vultr-aarch64.toml' --dry-run")
     let count = ($rec | get steps | length)
-    if $count != 16 {
-      error make {msg: $"expected 16 uefi steps got ($count)"}
+    if $count != 18 {
+      error make {msg: $"expected 18 uefi steps got ($count)"}
     }
     $count
   })
