@@ -129,7 +129,7 @@ export def vultr_deploy [
   mut snap_status = "pending"
   mut poll_count = 0
   while $snap_status != "complete" and $poll_count < 60 {
-    ^sleep 30sec
+    ^sleep 30
     let poll = try {
       ^$vultr_cli snapshot get $snap_id -o json | from json
     } catch {
