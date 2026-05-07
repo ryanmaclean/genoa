@@ -185,9 +185,11 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     let efi_filename = if $arch == "aarch64" { "BOOTaa64.EFI" } else { "BOOTx64.EFI" }
 
     # Derived image fields
-    let image_name   = $manifest | get image? | get name? | default "unknown"
-    let image_size   = $manifest | get image? | get size_mb? | default 20480
-    let output_image = $"($manifest.image?.output_dir? | default "./out")/($image_name)-($image_version).raw"
+    let image_name    = $manifest | get image? | get name? | default "unknown"
+    let image_version = $manifest | get image? | get version? | default "v0.0.0"
+    let image_size    = $manifest | get image? | get size_mb? | default 20480
+    let _out_dir      = ($manifest.image?.output_dir? | default "./out")
+    let output_image  = $"($_out_dir)/($image_name)-($image_version).raw"
     let hostname     = $manifest | get network? | get hostname? | default $image_name
     let agent_name   = $manifest | get agent? | get name? | default ""
     let os_version   = $manifest | get target? | get os_version? | default "15.0-RELEASE"
