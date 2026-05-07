@@ -1,4 +1,6 @@
 #!/usr/bin/env nu
+source profiles/uefi.nu
+source profiles/kboot.nu
 
 def "main catalog" [] {
   open "catalog/providers.v1.json" | to json --indent 2
@@ -148,10 +150,8 @@ def "main build" [
   let build_result = if not ($profile_file | path exists) {
     {action: "failed", reason: $"unknown profile: ($p); supported: uefi, kboot", profile: $p}
   } else if $p == "kboot" {
-    source profiles/kboot.nu
     kboot_build $m $dry_run
   } else {
-    source profiles/uefi.nu
     uefi_build $m $dry_run
   }
 
