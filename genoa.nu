@@ -1,6 +1,8 @@
 #!/usr/bin/env nu
 source profiles/uefi.nu
 source profiles/kboot.nu
+source adapters/linode.nu
+source adapters/vultr.nu
 
 def "main catalog" [] {
   open "catalog/providers.v1.json" | to json --indent 2
@@ -338,9 +340,9 @@ def "main deploy" [
   }
 
   if $path == "rescue-dd" {
-    source adapters/linode.nu; linode_deploy $m $image --dry-run=$dry_run | to json --indent 2
+    linode_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else if $path == "snapshot-url" {
-    source adapters/vultr.nu;  vultr_deploy  $m $image --dry-run=$dry_run | to json --indent 2
+    vultr_deploy  $m $image --dry-run=$dry_run | to json --indent 2
   } else {
     # OCI adapter has a top-level `source formats/convert.nu` which leaks a closure
     # when oci.nu is sourced inside an if/else branch. Invoke as subprocess to avoid
