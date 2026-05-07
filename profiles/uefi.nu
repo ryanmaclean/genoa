@@ -233,7 +233,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     # Multiple cmds joined with && so failure of any sub-command stops the chain
     let step4_cmds = [
         $"gpart create -s gpt ($md_dev)"
-        $"gpart add -t efi    -s 512M -l esp    ($md_dev)"
+        $"gpart add -t efi    -s 128M -l esp    ($md_dev)"
         $"gpart add -t freebsd-ufs    -l rootfs ($md_dev)"
     ]
     let step4 = run_step {
