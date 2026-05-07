@@ -857,3 +857,51 @@ def main [] {
 }
 
 
+
+# Emit build metrics and events to Datadog via pup.
+# Reads a receipt file and posts genoa.build.* metrics.
+# Requires: pup authenticated (`pup auth status`)
+def "main notify" [receipt_file: string, --dry-run] {
+  if not ($receipt_file | path exists) {
+    return ({action: "failed", error: $"receipt not found: ($receipt_file)"} | to json --indent 2)
+  }
+  let r = open $receipt_file
+  let profile  = $r.build?.profile?   | default "unknown"
+  let arch     = $r.build?.arch?      | default "unknown"
+  let dry      = $r.build?.dry_run?   | default false
+  let agent_n  = $r.agent?.name?      | default "unknown"
+  let img_ver  = $r.image?.version?   | default "unknown"
+  let img_name = $r.image?.name?      | default "unknown"
+  let claims   = $r.claims? | default [] | length
+  let now      = (date now | format date "%s" | into int)
+
+  let metrics = {
+    series: [
+      {metric: "genoa.build.success"  type: 1 points: [{timestamp: $now value: 1}]
+       tags: [$"profile:($profile)" $"arch:($arch)" $"dry_run:($dry)" $"agent_name:($agent_n)" "project:genoa"]}
+      {metric: "genoa.image.size_mb"  type: 3 points: [{timestamp: $now value: ($r.image?.size_mb? | default 1024)}]
+       tags: [$"profile:($profile)" $"arch:($arch)" "project:genoa"]}
+      {metric: "genoa.receipt.claims" type: 3 points: [{timestamp: $now value: $claims}]
+       tags: [$"profile:($profile)" "project:genoa"]}
+    ]
+  }
+
+  if $dry_run {
+    return ({action: "would-notify", receipt: $receipt_file, metrics: ($metrics.series | length), tags: [$"profile:($profile)" $"arch:($arch)"]} | to json --indent 2)
+  }
+
+  let tmp = $"/tmp/genoa-metrics-($now).json"
+  $metrics | to json | save --force $tmp
+
+  let result = try {
+    ^pup metrics submit --file $tmp | complete
+  } catch { |e| {exit_code: -1 stderr: $e.msg} }
+
+  ^rm -f $tmp
+
+  if ($result.exit_code? | default 99) == 0 {
+    {action: "notified" receipt: $receipt_file metrics_submitted: ($metrics.series | length) profile: $profile arch: $arch} | to json --indent 2
+  } else {
+    {action: "failed" step: "pup_metrics_submit" stderr: ($result.stderr? | default "unknown error")} | to json --indent 2
+  }
+}
