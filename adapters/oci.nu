@@ -23,7 +23,9 @@
 # Path: convert raw → qcow2 → upload to Object Storage → import as custom image → launch instance
 # oci-cli is UPL-1.0 — invoked as external subprocess only, never linked or vendored.
 
-source formats/convert.nu
+# Note: formats/convert.nu must be sourced before this file.
+# When invoked via genoa.nu: source adapters/oci.nu requires convert functions pre-loaded.
+# When invoked via adapters/oci-shim.nu: the shim sources ../formats/convert.nu first.
 
 export def oci_deploy [
   manifest: record
@@ -33,9 +35,7 @@ export def oci_deploy [
   let dry_run = $dry_run
 
   # ── Step 0 — credential and tool check ────────────────────────────────────
-  let oci_cli = if ("/opt/homebrew/bin/oci" | path exists) { "/opt/homebrew/bin/oci" }
-                else if ((which oci | length) > 0) { "oci" }
-                else { null }
+  let oci_cli = if ("/opt/homebrew/bin/oci" | path exists) { "/opt/homebrew/bin/oci" } else if ((which oci | length) > 0) { "oci" } else { null }
   let oci_config = ($env.HOME | path join ".oci" "config")
 
   # When dry-run, skip credential check and return the plan

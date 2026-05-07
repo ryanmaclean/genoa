@@ -342,7 +342,19 @@ def "main deploy" [
   } else if $path == "snapshot-url" {
     source adapters/vultr.nu;  vultr_deploy  $m $image --dry-run=$dry_run | to json --indent 2
   } else {
-    source adapters/oci.nu;    oci_deploy    $m $image --dry-run=$dry_run | to json --indent 2
+    # OCI adapter has a top-level `source formats/convert.nu` which leaks a closure
+    # when oci.nu is sourced inside an if/else branch. Invoke as subprocess to avoid
+    # the source-in-branch leak while keeping oci.nu self-contained.
+    let dry_flag = if $dry_run { ["--dry-run"] } else { [] }
+    let manifest_json = ($m | to json)
+    let result_json = try {
+      ^nu adapters/oci-shim.nu $manifest_json $image ...$dry_flag | str trim
+    } catch { |e|
+      {action: "failed", reason: $"oci adapter invocation failed: ($e.msg)", provider: "oci"} | to json
+    }
+    try { $result_json | from json | to json --indent 2 } catch {
+      {action: "failed", reason: "oci adapter output not parseable", raw: $result_json} | to json --indent 2
+    }
   }
 }
 
