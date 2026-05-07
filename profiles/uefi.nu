@@ -187,7 +187,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     # Derived image fields
     let image_name   = $manifest | get image? | get name? | default "unknown"
     let image_size   = $manifest | get image? | get size_mb? | default 20480
-    let output_image = $"/tmp/genoa-($image_name).raw"
+    let output_image = $"($manifest.image?.output_dir? | default "./out")/($image_name)-($image_version).raw"
     let hostname     = $manifest | get network? | get hostname? | default $image_name
     let agent_name   = $manifest | get agent? | get name? | default ""
     let os_version   = $manifest | get target? | get os_version? | default "15.0-RELEASE"
@@ -198,7 +198,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         step: 3
         label: "create_disk_image"
         action: "would-run"
-        cmd: $"truncate -s ($image_size)M ($output_image)"
+        cmd: $"rm -f ($output_image) && truncate -s ($image_size)M ($output_image)"
         description: $"Create ($image_size) MiB raw disk image at ($output_image)."
     } $dry_run
     if $step3.action == "failed" {
