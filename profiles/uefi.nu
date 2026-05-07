@@ -257,7 +257,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         step: 5
         label: "format_esp"
         action: "would-run"
-        cmd: $"newfs_msdos -F 32 -S 512 -c 8 -L ESP ($md_dev)p1"
+        cmd: $"newfs_msdos -F 16 -L ESP ($md_dev)p1"
         description: "Format ESP partition as FAT32."
     } $dry_run
     if $step5.action == "failed" {
