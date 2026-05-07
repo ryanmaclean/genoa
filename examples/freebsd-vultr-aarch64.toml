@@ -4,7 +4,7 @@ schema_version = "v1"
 name = "smolbsd-vultr-aarch64"
 version = "v0.1.0"
 format = "raw"
-size_mb = 2048
+size_mb = 1024
 description = "Minimal FreeBSD for Vultr aarch64 via ISO boot"
 
 [target]
