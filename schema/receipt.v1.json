@@ -171,16 +171,21 @@
       "description": "Verifiable claims about the image. Each claim can be checked by fleet-eval.",
       "items": {
         "type": "object",
-        "required": ["claim", "probe", "expect", "status"],
+        "required": ["claim", "executor", "probe", "expect", "status"],
         "additionalProperties": false,
         "properties": {
           "claim": { "type": "string", "description": "Human-readable statement of what is asserted." },
-          "probe": { "type": "string", "description": "Shell command or fleet-eval probe expression to verify the claim." },
+          "executor": {
+            "type": "string",
+            "enum": ["nu", "sh"],
+            "description": "Runtime to use when evaluating the probe. 'nu' = Nushell (nu -c), 'sh' = POSIX shell (sh -c)."
+          },
+          "probe": { "type": "string", "description": "Command to verify the claim. Evaluate with the declared executor." },
           "expect": { "type": "string", "description": "Expected output / exit condition." },
           "status": {
             "type": "string",
-            "enum": ["verified", "unverified", "skipped", "failed"],
-            "description": "Verification status at receipt-emit time. 'unverified' for dry-run."
+            "enum": ["verified", "unverified", "asserted", "skipped", "failed"],
+            "description": "Verification status at receipt-emit time. 'unverified'/'asserted' for dry-run or unverified claims."
           },
           "verified_at": {
             "type": "string",

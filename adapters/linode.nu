@@ -19,15 +19,16 @@ export def linode_deploy [
     let steps = [
       {
         step: 1
-        action: "would-run"
+        action: "create_linode"
+        automated: true
         command: "linode-cli linodes create"
+        cmd: $"linode-cli linodes create --type ($plan) --region ($region) --no-image --label ($image_name)-temp --json"
         description: "Create a raw Linode with unformatted disk (bypasses ext3/ext4 requirement)"
         args: {
           type: $plan
           region: $region
           image: ""
           label: $"($image_name)-temp"
-          root_pass: "rescue-only"
         }
         notes: [
           "Create disk as RAW/unformatted, NOT ext3/ext4"
@@ -38,8 +39,10 @@ export def linode_deploy [
       }
       {
         step: 2
-        action: "would-run"
+        action: "boot_rescue"
+        automated: true
         command: "linode-cli linodes rescue"
+        cmd: "linode-cli linodes rescue <id-from-step-1> --devices.sda.disk_id=<disk-id> --json"
         description: "Boot into Finnix rescue mode"
         args: {
           linode_id: "<id-from-step-1>"
@@ -52,39 +55,35 @@ export def linode_deploy [
       }
       {
         step: 3
-        action: "would-run"
+        action: "poll_rescue_ready"
+        automated: true
         description: "Poll until status=running (max 20 × 15s)"
         command: "linode-cli linodes view"
+        cmd: "linode-cli linodes view <id-from-step-1> --json"
         args: {linode_id: "<id-from-step-1>"}
       }
       {
         step: 4
-        action: "manual_ssh"
-        cmd: "ssh root@<rescue-ip>"
-        note: "SSH into rescue environment — may take 1-2 min after status=running"
+        action: "dd_image"
+        automated: false
+        manual_reason: "Requires SSH access to rescue shell; cannot automate without pre-provisioned SSH key and IP"
+        cmd: $"ssh root@<rescue-ip> 'curl -fsSL ($image_path) | dd of=/dev/sda bs=1M conv=fsync status=progress'"
+        note: "SSH into rescue environment and write image to disk — may take 1-2 min after status=running"
       }
       {
         step: 5
-        action: "manual_verify"
-        cmd: $"curl -fsSL ($image_path) | sha256sum"
-        note: "Verify image sha256 in rescue shell"
-      }
-      {
-        step: 6
-        action: "manual_dd"
-        cmd: $"curl -fsSL ($image_path) | dd of=/dev/sda bs=1M conv=fsync status=progress"
-        note: "Write image to disk"
-      }
-      {
-        step: 7
-        action: "manual_reboot"
-        cmd: "shutdown -r now"
+        action: "reboot"
+        automated: true
+        command: "linode-cli linodes reboot"
+        cmd: "linode-cli linodes reboot <id-from-step-1> --json"
         note: "Reboot into FreeBSD"
       }
       {
-        step: 8
-        action: "would-run"
+        step: 6
+        action: "set_direct_disk_kernel"
+        automated: true
         command: "linode-cli linodes config-update"
+        cmd: "linode-cli linodes config-update <id-from-step-1> --kernel linode/direct-disk --json"
         description: "Switch to direct disk kernel after reboot"
         args: {
           linode_id: "<id-from-step-1>"

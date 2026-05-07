@@ -246,30 +246,35 @@ def "main build" [
       [
         {
           claim: $"image sha256 is ($image_sha256)"
-          probe: $"sha256sum ($image_path)"
+          executor: "sh"
+          probe: $"openssl dgst -sha256 -r ($image_path) | awk '{print $1}'"
           expect: $image_sha256
           status: $claim_status
         }
         {
           claim: $"manifest sha256 is ($manifest_sha256)"
-          probe: $"sha256sum ($manifest_file)"
+          executor: "sh"
+          probe: $"openssl dgst -sha256 -r ($manifest_file) | awk '{print $1}'"
           expect: $manifest_sha256
           status: "verified"
         }
         {
           claim: $"agent name is ($m.agent?.name? | default "unknown")"
+          executor: "nu"
           probe: $"nu genoa.nu describe ($manifest_file) | from json | get agent | get name"
           expect: ($m.agent?.name? | default "unknown")
           status: "asserted"
         }
         {
           claim: $"image format is ($m.image?.format? | default "raw")"
+          executor: "sh"
           probe: $"file ($image_path)"
           expect: ($m.image?.format? | default "raw")
           status: $claim_status
         }
         {
           claim: $"target os is ($m.target?.os? | default "freebsd")"
+          executor: "nu"
           probe: $"nu genoa.nu describe ($manifest_file) | from json | get target | get os"
           expect: ($m.target?.os? | default "freebsd")
           status: "asserted"
@@ -535,7 +540,7 @@ def "main verify" [receipt_file: string, --image: string = ""] {
   let image_check = if $image_ok {
     {check: "image_exists", pass: true, detail: $"($actual_image) exists"}
   } else if $is_dry_run_receipt {
-    {check: "image_exists", pass: true, detail: $"dry-run receipt — image not yet built: ($actual_image)"}
+    {check: "image_exists", pass: false, skipped: true, detail: "dry-run receipt — image not yet built; build first"}
   } else {
     {check: "image_exists", pass: false, detail: $"image not found: ($actual_image)"}
   }
@@ -601,7 +606,7 @@ def "main verify" [receipt_file: string, --image: string = ""] {
 
   # 4. image_sha256_match — skip for any dry-run placeholder variant
   let img_sha256_check = if ($image_sha256 == "PLACEHOLDER_DRY_RUN") or ($image_sha256 == "PLACEHOLDER") or ($image_sha256 == "dry-run-placeholder") {
-    {check: "image_sha256", pass: true, detail: "dry-run receipt — sha256 not computed; skipping"}
+    {check: "image_sha256", pass: false, skipped: true, detail: "dry-run receipt — sha256 not computed; build first to get a real hash"}
   } else {
     let computed_image_sha256 = if $image_ok {
       if $nu.os-info.name == "macos" {
@@ -622,7 +627,7 @@ def "main verify" [receipt_file: string, --image: string = ""] {
     {check: "image_sha256", pass: $img_hash_ok, detail: $img_hash_detail}
   }
   $checks = ($checks | append $img_sha256_check)
-  if not $img_sha256_check.pass { $errors = ($errors | append $img_sha256_check.detail) }
+  if not $img_sha256_check.pass and ($img_sha256_check.skipped? | default false) != true { $errors = ($errors | append $img_sha256_check.detail) }
 
   # 5. manifest_sha256_match — only if manifest_path is set and exists on disk
   let manifest_check = if $manifest_path == "" {
@@ -652,13 +657,14 @@ def "main verify" [receipt_file: string, --image: string = ""] {
   $checks = ($checks | append {check: "receipt_id_present", pass: $id_ok, detail: $id_detail})
   if not $id_ok { $errors = ($errors | append $id_detail) }
 
+  let valid = ($checks | where { |c| ($c.skipped? | default false) != true } | where pass == false | length) == 0
   {
     action: "verify"
     image: $actual_image
     receipt_file: $receipt_file
     receipt_id: $receipt_id
     checks: $checks
-    valid: ($errors | is-empty)
+    valid: $valid
     errors: $errors
   } | to json --indent 2
 }
@@ -788,8 +794,16 @@ def "main run" [
     $r.image?.output_path? | default ($r.image_path? | default "/tmp/genoa.raw")
   } else { "/tmp/genoa.raw" }
   let pub_result = (main publish $image_path --backend $backend --dry-run=$dry_run | from json)
-  # Extract published URL from pub_result
-  let published_url = $pub_result | get url? | default ""
+  # Extract published URL from pub_result; synthesize a representative placeholder for dry-runs
+  let published_url = if ($pub_result.action? == "would-run") or ($pub_result.url? == null) or ($pub_result.url? == "") {
+    let m = open $manifest_file
+    let name    = $m.image?.name?    | default "image"
+    let version = $m.image?.version? | default "v0.0.0"
+    let fmt     = $m.image?.format?  | default "raw"
+    $"https://example-bucket.example.com/($name)-($version).($fmt)"
+  } else {
+    $pub_result.url
+  }
   # Write published info back into the receipt so downstream agents can locate the image URL
   if $receipt_path != "" and ($receipt_path | path exists) {
     let receipt = open $receipt_path

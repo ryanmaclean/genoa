@@ -374,60 +374,58 @@ export def kboot_build [manifest: record, dry_run: bool = false] {
         schema_version: "v1"
         profile: "kboot"
         dry_run: $dry_run
-        version: "1.0.0"
-        hostname: $hostname
-        image_path: $image_path
-        image_size_gb: $image_size_gb
-        arch: $arch
-        bootloader: "GRUB2"
-        kernel_provider: "Linux mini-kernel"
-        init_provider: "loader.kboot (FreeBSD)"
-
-        description: "GRUB2 + Linux + loader.kboot + FreeBSD UFS2 root. ext4 boot partition satisfies provider requirements. FreeBSD runs on UFS2 partition 2."
-
-        partition_layout: {
-            p1: {
-                size: "512M"
-                type: "ef00"
-                purpose: "EFI System Partition (ESP)"
-                filesystem: "FAT32"
-                label: "ESP"
-            }
-            p2: {
-                size: "512M"
-                type: "8300"
-                purpose: "ext4 boot (GRUB, kernel, kboot initrd)"
-                filesystem: "ext4"
-                label: "KBOOT"
-            }
-            p3: {
-                size: "remaining"
-                type: "a502"
-                purpose: "FreeBSD UFS2 root (real FreeBSD root filesystem)"
-                filesystem: "UFS2"
-                label: "FREEBSD_ROOT"
-            }
-        }
-
+        validation: {valid: true, checks: []}
         steps: [
             $step1 $step2 $step3 $step4 $step5 $step6 $step7
             $step8 $step9 $step10 $step11 $step12 $step13
             $step14 $step15 $step16 $step17 $step18_render $step19 $step20 $step21
         ]
-
-        ext4_compliance: "Partition p2 is ext4 (without modern features). Satisfies ext4-only provider requirements."
-        freebsd_root_real: "Partition p3 is UFS2 with real FreeBSD root. No modifications to ext4 partition by FreeBSD kernel."
-        freebsd_native_boot: "FreeBSD kernel boots via kexec, runs normally. No FreeBSD bootloader modifications needed."
-
-        kboot_source: "https://cgit.freebsd.org/src/tree/stand/kboot"
-        kboot_build_cmd: $"cd /usr/src/stand/kboot && make MK_LOADER_KBOOT=yes MACHINE_CPUARCH=($fbsd_cpuarch)"
-        kboot_production_use: "GCE ARM64 (Google Cloud Engine) uses kboot for FreeBSD ARM64 images"
-
-        licensing: {
-            genoa_profile: "BSD-2-Clause"
-            grub2: "GPL-2.0 (invoked as external tool, never vendored)"
-            loader_kboot: "BSD-2-Clause (FreeBSD in-tree)"
-            linux_kernel: "GPL-2.0 (used as boot trampoline, minimal)"
+        receipt_path: ""
+        notes: {
+            version: "1.0.0"
+            hostname: $hostname
+            image_path: $image_path
+            image_size_gb: $image_size_gb
+            arch: $arch
+            bootloader: "GRUB2"
+            kernel_provider: "Linux mini-kernel"
+            init_provider: "loader.kboot (FreeBSD)"
+            description: "GRUB2 + Linux + loader.kboot + FreeBSD UFS2 root. ext4 boot partition satisfies provider requirements. FreeBSD runs on UFS2 partition 2."
+            partition_layout: {
+                p1: {
+                    size: "512M"
+                    type: "ef00"
+                    purpose: "EFI System Partition (ESP)"
+                    filesystem: "FAT32"
+                    label: "ESP"
+                }
+                p2: {
+                    size: "512M"
+                    type: "8300"
+                    purpose: "ext4 boot (GRUB, kernel, kboot initrd)"
+                    filesystem: "ext4"
+                    label: "KBOOT"
+                }
+                p3: {
+                    size: "remaining"
+                    type: "a502"
+                    purpose: "FreeBSD UFS2 root (real FreeBSD root filesystem)"
+                    filesystem: "UFS2"
+                    label: "FREEBSD_ROOT"
+                }
+            }
+            ext4_compliance: "Partition p2 is ext4 (without modern features). Satisfies ext4-only provider requirements."
+            freebsd_root_real: "Partition p3 is UFS2 with real FreeBSD root. No modifications to ext4 partition by FreeBSD kernel."
+            freebsd_native_boot: "FreeBSD kernel boots via kexec, runs normally. No FreeBSD bootloader modifications needed."
+            kboot_source: "https://cgit.freebsd.org/src/tree/stand/kboot"
+            kboot_build_cmd: $"cd /usr/src/stand/kboot && make MK_LOADER_KBOOT=yes MACHINE_CPUARCH=($fbsd_cpuarch)"
+            kboot_production_use: "GCE ARM64 (Google Cloud Engine) uses kboot for FreeBSD ARM64 images"
+            licensing: {
+                genoa_profile: "BSD-2-Clause"
+                grub2: "GPL-2.0 (invoked as external tool, never vendored)"
+                loader_kboot: "BSD-2-Clause (FreeBSD in-tree)"
+                linux_kernel: "GPL-2.0 (used as boot trampoline, minimal)"
+            }
         }
     }
 

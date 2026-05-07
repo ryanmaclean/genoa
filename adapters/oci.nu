@@ -24,6 +24,7 @@
 # oci-cli is UPL-1.0 — invoked as external subprocess only, never linked or vendored.
 
 source formats/convert.nu
+{}  # sentinel: prevents source from returning convert.nu's last expression
 
 export def oci_deploy [
   manifest: record
