@@ -328,6 +328,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
     # ── step 12: inject_agent ───────────────────────────────────────────────
     let step12_cmds = if ($agent_name | is-empty) { [] } else { [
+        "mkdir -p /mnt/rootfs/usr/local/bin /mnt/rootfs/usr/local/etc/rc.d"
         $"cp ./out/($agent_name) /mnt/rootfs/usr/local/bin/($agent_name)"
         $"chmod 755 /mnt/rootfs/usr/local/bin/($agent_name)"
         $"cp ./rc.d/($agent_name) /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
