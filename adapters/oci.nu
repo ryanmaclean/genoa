@@ -54,10 +54,11 @@ export def oci_deploy [
     let object_name = ($qcow2_path | path basename)
 
     return {
+      action: "would-run"
       provider: "oci"
       dry_run: true
       path: "Path 0: BYOI (qcow2 via Object Storage)"
-      manifest: $manifest
+      image_name: ($manifest.image?.name? | default "genoa-freebsd")
       image_path: $image_path
       qcow2_path: $qcow2_path
       plan: {
