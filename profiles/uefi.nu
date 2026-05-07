@@ -190,6 +190,8 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     let image_size    = $manifest | get image? | get size_mb? | default 20480
     let _out_dir      = ($manifest.image?.output_dir? | default "./out")
     let output_image  = $"($_out_dir)/($image_name)-($image_version).raw"
+    # Pre-build as string to avoid Nu 0.111.0 bug: ($int)M inside $"..." is parsed as filesize
+    let image_size_arg = ($image_size | into string) + "M"
     let hostname     = $manifest | get network? | get hostname? | default $image_name
     let agent_name   = $manifest | get agent? | get name? | default ""
     let os_version   = $manifest | get target? | get os_version? | default "15.0-RELEASE"
@@ -200,7 +202,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         step: 3
         label: "create_disk_image"
         action: "would-run"
-        cmd: $"rm -f ($output_image) && truncate -s ($image_size)M ($output_image)"
+        cmd: $"rm -f ($output_image) && truncate -s ($image_size_arg) ($output_image)"
         description: $"Create ($image_size) MiB raw disk image at ($output_image)."
     } $dry_run
     if $step3.action == "failed" {
