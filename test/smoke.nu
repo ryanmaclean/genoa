@@ -142,12 +142,12 @@ let tests = [
     $val
   })
 
-  # build_steps_uefi — uefi dry-run has exactly 18 steps (step 3b attach_mdconfig + step 15b detach_mdconfig added)
+  # build_steps_uefi — uefi dry-run has exactly 21 steps (+step8b reinstall_efi_loader_from_base, +step9b write_loader_conf, +step9c write_rc_conf)
   (run_test "build_steps_uefi" {
     let rec = (genoa "main build 'examples/freebsd-vultr-aarch64.toml' --dry-run")
     let count = ($rec | get steps | length)
-    if $count != 18 {
-      error make {msg: $"expected 18 uefi steps got ($count)"}
+    if $count != 21 {
+      error make {msg: $"expected 21 uefi steps got ($count)"}
     }
     $count
   })

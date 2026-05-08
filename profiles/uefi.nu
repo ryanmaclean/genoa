@@ -328,6 +328,72 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step9.label, exit_code: $step9.exit_code, detail: $step9}
     }
 
+    # ── step 8b: reinstall_efi_loader_from_base ─────────────────────────────
+    # Override the buildworld loader.efi with the one from base.txz.
+    # base.txz extracts /boot/loader.efi into the rootfs; this version
+    # matches the kernel exactly and has no buildworld EFI device paths.
+    let step8b_cmds = [
+        $"mount -t msdosfs ($md_dev)p1 /mnt/esp"
+        $"cp /mnt/rootfs/boot/loader.efi /mnt/esp/EFI/BOOT/($efi_filename)"
+        "umount /mnt/esp"
+    ]
+    let step8b = run_step {
+        step: "8b"
+        label: "reinstall_efi_loader_from_base"
+        action: "would-run"
+        cmd: ($step8b_cmds | str join " && ")
+        cmds: $step8b_cmds
+        description: $"Replace buildworld loader.efi with version from base.txz at /mnt/rootfs/boot/loader.efi — ensures loader and kernel are same build."
+        efi_binary: $efi_filename
+    } $dry_run
+    if $step8b.action == "failed" {
+        return {action: "build-failed", failed_step: $step8b.label, exit_code: $step8b.exit_code, detail: $step8b}
+    }
+
+    # ── step 9b: write_loader_conf ──────────────────────────────────────────
+    # Write rendered loader.conf directly via Nu save — avoids heredoc quoting issues.
+    let step9b = if $dry_run {
+        {step: "9b" label: "write_loader_conf" action: "would-run"
+         description: "Write loader.conf to /mnt/rootfs/boot/loader.conf"
+         output_path: "/mnt/rootfs/boot/loader.conf"
+         preview: ($loader_conf_rendered | str substring 0..120)}
+    } else {
+        try {
+            $loader_conf_rendered | save --force "/mnt/rootfs/boot/loader.conf"
+            {step: "9b" label: "write_loader_conf" action: "ran" exit_code: 0
+             description: "Wrote loader.conf to /mnt/rootfs/boot/loader.conf"
+             output_path: "/mnt/rootfs/boot/loader.conf"}
+        } catch { |e|
+            {step: "9b" label: "write_loader_conf" action: "failed" exit_code: 1
+             stderr: $e.msg}
+        }
+    }
+    if $step9b.action == "failed" {
+        return {action: "build-failed", failed_step: $step9b.label, exit_code: 1, detail: $step9b}
+    }
+
+    # ── step 9c: write_rc_conf ───────────────────────────────────────────────
+    # Write rendered rc.conf directly via Nu save — avoids heredoc quoting issues.
+    let step9c = if $dry_run {
+        {step: "9c" label: "write_rc_conf" action: "would-run"
+         description: "Write rc.conf to /mnt/rootfs/etc/rc.conf"
+         output_path: "/mnt/rootfs/etc/rc.conf"
+         preview: ($rc_conf_rendered | str substring 0..120)}
+    } else {
+        try {
+            $rc_conf_rendered | save --force "/mnt/rootfs/etc/rc.conf"
+            {step: "9c" label: "write_rc_conf" action: "ran" exit_code: 0
+             description: "Wrote rc.conf to /mnt/rootfs/etc/rc.conf"
+             output_path: "/mnt/rootfs/etc/rc.conf"}
+        } catch { |e|
+            {step: "9c" label: "write_rc_conf" action: "failed" exit_code: 1
+             stderr: $e.msg}
+        }
+    }
+    if $step9c.action == "failed" {
+        return {action: "build-failed", failed_step: $step9c.label, exit_code: 1, detail: $step9c}
+    }
+
     # ── step 12: inject_agent ───────────────────────────────────────────────
     let step12_cmds = if ($agent_name | is-empty) { [] } else { [
         "mkdir -p /mnt/rootfs/usr/local/bin /mnt/rootfs/usr/local/etc/rc.d"
@@ -448,24 +514,33 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
             # ── 9. extract_kernel ────────────────────────────────────────────
             $step9
 
-            # ── 10. configure_loader (real) ────────────────────────────────────
+            # ── 8b. reinstall_efi_loader_from_base ──────────────────────────
+            $step8b
+
+            # ── 9b. write_loader_conf ────────────────────────────────────────
+            $step9b
+
+            # ── 9c. write_rc_conf ────────────────────────────────────────────
+            $step9c
+
+            # ── 10. configure_loader (real — rendered content; written in step 9b) ─
             {
                 step: 10
                 label: "configure_loader"
                 action: "real"
-                description: "Render templates/uefi/loader.conf.tera → /boot/loader.conf content."
+                description: "Render templates/uefi/loader.conf.tera → written to disk in step 9b."
                 output_path: "/mnt/rootfs/boot/loader.conf"
-                rendered: $loader_conf_rendered
+                preview: ($loader_conf_rendered | str substring 0..120)
             }
 
-            # ── 11. configure_rc (real) ────────────────────────────────────────
+            # ── 11. configure_rc (real — rendered content; written in step 9c) ──
             {
                 step: 11
                 label: "configure_rc"
                 action: "real"
-                description: "Render templates/uefi/rc.conf.tera → /etc/rc.conf content."
+                description: "Render templates/uefi/rc.conf.tera → written to disk in step 9c."
                 output_path: "/mnt/rootfs/etc/rc.conf"
-                rendered: $rc_conf_rendered
+                preview: ($rc_conf_rendered | str substring 0..120)
             }
 
             # ── 12. inject_agent ──────────────────────────────────────────────
