@@ -241,6 +241,38 @@ let tests = [
     $"receipts_found=($found)"
   })
 
+  # notify_dry_run — dry-run returns action="would-notify", metrics >= 3, tags list with >= 2 elements
+  (run_test "notify_dry_run" {
+    let rec = (^nu genoa.nu notify out/smolbsd-vultr-aarch64-v0.1.0.receipt.json --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-notify" {
+      error make {msg: $"expected action=would-notify got ($action)"}
+    }
+    let metrics = ($rec | get metrics)
+    if $metrics < 3 {
+      error make {msg: $"expected metrics >= 3 got ($metrics)"}
+    }
+    let tags = ($rec | get tags)
+    if ($tags | length) < 2 {
+      error make {msg: $"expected tags list with >= 2 elements, got ($tags | length)"}
+    }
+    $"action=($action) metrics=($metrics) tags=($tags | length)"
+  })
+
+  # publish_gitea_dry_run — dry-run returns action="would-run", backend="gitea", output is valid JSON
+  (run_test "publish_gitea_dry_run" {
+    let rec = (^nu genoa.nu publish out/smolbsd-vultr-aarch64-v0.1.0.raw --backend gitea --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run got ($action)"}
+    }
+    let backend = ($rec | get backend)
+    if $backend != "gitea" {
+      error make {msg: $"expected backend=gitea got ($backend)"}
+    }
+    $"action=($action) backend=($backend)"
+  })
+
   # signing_dry_run — receipt includes signing field with action="unsigned" when no signing section in manifest
   (run_test "signing_dry_run" {
     let rec = (genoa "main build 'examples/agent-port-template.toml' --dry-run")

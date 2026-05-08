@@ -93,7 +93,7 @@ def render_loader_conf [manifest: record] {
         open --raw $tmpl_path
     } else {
         # Inline fallback — matches templates/uefi/loader.conf.tera exactly
-        "hint.hostname.0=\"{{ hostname }}\"\ncomconsole_speed=\"{{ console_speed }}\"\nconsole=\"comconsole,vidconsole\"\nboot_multicons=\"YES\"\nboot_serial=\"YES\"\nkern.hz={{ kern_hz }}\nautoboot_delay=\"3\"\nif_ena_load=\"YES\"\ngve_load=\"YES\"\n"
+        "hint.hostname.0=\"{{ hostname }}\"\ncomconsole_speed=\"{{ console_speed }}\"\nconsole=\"comconsole,vidconsole\"\nboot_multicons=\"YES\"\nboot_serial=\"YES\"\nkern.hz={{ kern_hz }}\nvfs.root.mountfrom=\"ufs:/dev/gpt/rootfs\"\nkern.vty=vt\nautoboot_delay=\"3\"\nif_ena_load=\"YES\"\ngve_load=\"YES\"\n"
     }
 
     $tmpl

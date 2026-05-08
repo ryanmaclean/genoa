@@ -172,11 +172,11 @@ def publish_gitea [image_path: string, dry_run: bool] {
     0
   }
   let tag        = $"genoa-(date now | format date '%Y%m%d')"
-  let gitea_base = "https://gitea.local:3000/studio/genoa"
+  let gitea_base = "http://10.0.3.210:3000/string/genoa"
   let url        = $"($gitea_base)/releases/download/($tag)/($filename)"
 
-  let create_cmd = $"tea releases create --tag ($tag) --title 'genoa image'"
-  let upload_cmd = $"tea releases asset upload --tag ($tag) ($image_path)"
+  let create_cmd = $"tea release create --login qnas --repo string/genoa --tag ($tag) --title 'genoa image' --note ''"
+  let upload_cmd = $"tea releases assets create --login qnas -r string/genoa ($tag) ($image_path)"
 
   if ($size_bytes > 100_000_000) {
     print $"WARNING: image size (($size_bytes)) bytes exceeds Gitea default 100 MB limit — upload may fail"
@@ -200,8 +200,8 @@ def publish_gitea [image_path: string, dry_run: bool] {
   let sha256     = file_sha256 $image_path
   let expires_at = (date now) + 7day
 
-  run-external $tea "releases" "create" "--tag" $tag "--title" "genoa image"
-  run-external $tea "releases" "assets" "upload" "--tag" $tag $image_path
+  run-external $tea "release" "create" "--login" "qnas" "--repo" "string/genoa" "--tag" $tag "--title" "genoa image" "--note" ""
+  run-external $tea "releases" "assets" "create" "--login" "qnas" "-r" "string/genoa" $tag $image_path
 
   {
     url:        $url

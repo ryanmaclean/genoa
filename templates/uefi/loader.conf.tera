@@ -25,6 +25,12 @@ boot_serial="YES"
 # kern.hz: interrupt frequency. 100 Hz is correct for VM/cloud; reduces idle CPU burn.
 # 1000 Hz is for bare metal latency-sensitive workloads.
 kern.hz={{ kern_hz }}
+# vfs.root.mountfrom: tell loader.efi which GPT partition is the root filesystem.
+# Without this the loader guesses wrong and the VM hangs at mountroot>.
+# The label "rootfs" matches: gpart add -t freebsd-ufs -l rootfs (uefi.nu step 4).
+vfs.root.mountfrom="ufs:/dev/gpt/rootfs"
+# kern.vty=vt: use the vt(4) virtual terminal driver (works correctly under KVM/QEMU).
+kern.vty=vt
 
 # ─── Boot Menu ────────────────────────────────────────────────────────────────
 # Short delay before auto-boot — enough for serial console to attach.
