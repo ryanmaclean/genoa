@@ -1,2 +1,5 @@
 option-c-unikernel/target/
 *.receipt.json
+artifacts/*.raw
+artifacts/*.raw.gz
+artifacts/v0.1.0/
