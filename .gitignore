@@ -3,3 +3,5 @@ option-c-unikernel/target/
 artifacts/*.raw
 artifacts/*.raw.gz
 artifacts/v0.1.0/
+out/*.raw
+out/*.raw.gz
