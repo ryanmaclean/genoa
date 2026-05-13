@@ -849,10 +849,86 @@ def "main run" [
     deploy:        $dep_result
   } | to json --indent 2
 }
+def "main health" [] {
+  let tools = [
+    {tool: "nu",          version_flag: "--version"}
+    {tool: "mdconfig",    version_flag: null}
+    {tool: "gpart",       version_flag: null}
+    {tool: "newfs_msdos", version_flag: null}
+    {tool: "newfs",       version_flag: null}
+    {tool: "mount",       version_flag: null}
+    {tool: "umount",      version_flag: null}
+    {tool: "tar",         version_flag: null}
+    {tool: "fetch",       version_flag: null}
+    {tool: "truncate",    version_flag: null}
+  ]
+
+  let checks = $tools | each { |t|
+    let found_path = (which $t.tool | get 0?.path? | default null)
+    let found = $found_path != null
+    let version = if $found and $t.version_flag != null {
+      try { ^nu --version | str trim } catch { null }
+    } else {
+      null
+    }
+    {tool: $t.tool, found: $found, path: $found_path, version: $version}
+  }
+
+  let all_found = ($checks | where found == false | is-empty)
+  let platform = (try { ^uname -s | str trim } catch { "unknown" })
+  let platform_ok = $platform == "FreeBSD"
+
+  {
+    action: "health"
+    ok: $all_found
+    checks: $checks
+    platform: $platform
+    platform_ok: $platform_ok
+  } | to json --indent 2
+}
+
+def "main selftest" [] {
+  let result = try {
+    ^nu test/smoke.nu | complete
+  } catch { |e|
+    return ({
+      action: "selftest"
+      passed: 0
+      failed: 0
+      total: 0
+      ok: false
+      output: $e.msg
+    } | to json --indent 2)
+  }
+
+  let output = $result.stdout
+  # Parse "Results: N/M passed, K failed"
+  let parsed = try {
+    let line = ($output | lines | where { |l| $l | str starts-with "Results:" } | first)
+    let passed = ($line | parse "Results: {p}/{t} passed, {f} failed" | first)
+    {
+      passed: ($passed.p | into int)
+      total:  ($passed.t | into int)
+      failed: ($passed.f | into int)
+    }
+  } catch {
+    {passed: 0, total: 0, failed: 0}
+  }
+
+  {
+    action: "selftest"
+    passed: $parsed.passed
+    failed: $parsed.failed
+    total:  $parsed.total
+    ok:     ($parsed.failed == 0)
+    output: $output
+  } | to json --indent 2
+}
+
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  verify  run  status"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  verify  run  status  health  selftest"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }

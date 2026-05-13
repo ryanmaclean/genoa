@@ -152,12 +152,12 @@ let tests = [
     $count
   })
 
-  # build_steps_kboot — kboot dry-run has exactly 21 steps (step15b=fetch_freebsd_base added)
+  # build_steps_kboot — kboot dry-run has exactly 23 steps (+18a write_loader_kboot_conf, +18b write_rc_conf)
   (run_test "build_steps_kboot" {
     let rec = (genoa "main build 'examples/freebsd-linode-amd64.toml' --profile kboot --dry-run")
     let count = ($rec | get steps | length)
-    if $count != 21 {
-      error make {msg: $"expected 21 kboot steps got ($count)"}
+    if $count != 23 {
+      error make {msg: $"expected 23 kboot steps got ($count)"}
     }
     $count
   })
@@ -290,6 +290,28 @@ let tests = [
       error make {msg: $"expected signing.tool=none, got ($tool)"}
     }
     $"signing.action=($action) signing.tool=($tool)"
+  })
+
+  # health — returns valid JSON with ok field and checks list containing all required tools
+  (run_test "health" {
+    let rec = (genoa "main health")
+    if "ok" not-in $rec {
+      error make {msg: $"expected 'ok' field in health output, got keys: ($rec | columns | str join ', ')"}
+    }
+    if "checks" not-in $rec {
+      error make {msg: $"expected 'checks' field in health output, got keys: ($rec | columns | str join ', ')"}
+    }
+    let checks = ($rec | get checks)
+    if ($checks | length) == 0 {
+      error make {msg: "expected non-empty checks list in health output"}
+    }
+    let tool_names = ($checks | get tool)
+    let required = ["nu" "mdconfig" "gpart" "newfs_msdos" "newfs" "mount" "umount" "tar" "fetch" "truncate"]
+    let missing = ($required | where { |t| $t not-in $tool_names })
+    if ($missing | length) > 0 {
+      error make {msg: $"health checks missing tools: ($missing | str join ', ')"}
+    }
+    $"ok=($rec.ok) checks=($checks | length) platform=($rec.platform)"
   })
 
 ]
