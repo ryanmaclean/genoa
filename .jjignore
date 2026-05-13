@@ -1,3 +1,4 @@
 option-c-unikernel/target/
-*.receipt.json
+# Receipts at root/out are ephemeral; those under artifacts/ are published records
+out/*.receipt.json
 /tmp/
