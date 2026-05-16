@@ -508,6 +508,46 @@ provider = \"vultr\"
     $"action=($action) provider=($provider)"
   })
 
+  # providers_list — action == "providers" and count > 0
+  (run_test "providers_list" {
+    let rec = (^nu genoa.nu providers | from json)
+    if ($rec.action? | default "") != "providers" {
+      error make {msg: $"expected action=providers, got: ($rec.action? | default 'missing')"}
+    }
+    let count = ($rec.count? | default 0)
+    if $count == 0 {
+      error make {msg: "expected count > 0, got 0"}
+    }
+    $"action=providers count=($count)"
+  })
+
+  # providers_filter — --id vultr returns count==1 and providers.0.id=="vultr"
+  (run_test "providers_filter" {
+    let rec = (^nu genoa.nu providers --id vultr | from json)
+    let count = ($rec.count? | default 0)
+    if $count != 1 {
+      error make {msg: $"expected count=1, got ($count)"}
+    }
+    let pid = ($rec.providers? | default [] | get 0?.id? | default "")
+    if $pid != "vultr" {
+      error make {msg: $"expected providers.0.id=vultr, got ($pid)"}
+    }
+    $"count=($count) id=($pid)"
+  })
+
+  # receipts_list — action == "receipts" and count > 0
+  (run_test "receipts_list" {
+    let rec = (^nu genoa.nu receipts | from json)
+    if ($rec.action? | default "") != "receipts" {
+      error make {msg: $"expected action=receipts, got: ($rec.action? | default 'missing')"}
+    }
+    let count = ($rec.count? | default 0)
+    if $count == 0 {
+      error make {msg: "expected count > 0, got 0"}
+    }
+    $"action=receipts count=($count)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

@@ -1322,7 +1322,7 @@ def "main diff" [
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status  providers  receipts"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }
@@ -1423,6 +1423,54 @@ def "main snapshot-status" [
     size_gb:     $size_gb
     description: ($s.description? | default "")
   } | to json --indent 2
+}
+
+def "main providers" [
+  --id: string = ""   # filter to single provider by ID
+] {
+  let cat = open "catalog/providers.v1.json"
+  let all = ($cat.providers | each { |p|
+    {
+      id:               ($p.id? | default "")
+      display_name:     ($p.display_name? | default "")
+      deployment_path:  ($p.deployment_path? | default null)
+      byoi_format:      ($p.byoi_format? | default null)
+      arch_support:     ($p.arch_support? | default ($p.architectures_supported? | default null))
+      freebsd_support:  ($p.freebsd_support? | default null)
+      min_image_size_mb: ($p.min_image_size_mb? | default null)
+      regions:          ($p.regions? | default null)
+      docs:             ($p.docs? | default null)
+    }
+  })
+  let filtered = if $id != "" {
+    $all | where id == $id
+  } else {
+    $all
+  }
+  if $id != "" and ($filtered | is-empty) {
+    {action: "providers" count: 0 providers: [] error: $"provider '($id)' not found in catalog"} | to json --indent 2
+  } else {
+    {action: "providers" count: ($filtered | length) providers: $filtered} | to json --indent 2
+  }
+}
+
+def "main receipts" [] {
+  let receipt_files = try { glob "artifacts/**/*.receipt.json" } catch { [] }
+  let receipts = ($receipt_files | each { |f|
+    let r = try { open $f } catch { {} }
+    {
+      path:       $f
+      version:    ($r.image?.version?     | default "")
+      image_name: ($r.image?.name?        | default "")
+      profile:    ($r.build?.profile?     | default "")
+      built_at:   ($r.built_at?           | default "")
+      host:       ($r.build?.host?        | default "")
+      provider:   ($r.published?.backend? | default (
+        $r.claims? | default [] | where { |c| ($c.claim? | default "") =~ "provider" } | get 0?.claim? | default ""
+      ))
+    }
+  } | sort-by built_at --reverse)
+  {action: "receipts" count: ($receipts | length) receipts: $receipts} | to json --indent 2
 }
 
 def "main notify" [receipt_file: string, --dry-run] {
