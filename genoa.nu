@@ -1259,10 +1259,70 @@ def "main sign" [
   {action: "signed", tool: $effective_tool, image: $image_path, signature: $sig_path, key: $effective_key} | to json --indent 2
 }
 
+def "main diff" [
+  receipt_a: string   # path to first receipt (older)
+  receipt_b: string   # path to second receipt (newer)
+] {
+  if not ($receipt_a | path exists) {
+    error make {msg: $"receipt not found: ($receipt_a)"}
+  }
+  if not ($receipt_b | path exists) {
+    error make {msg: $"receipt not found: ($receipt_b)"}
+  }
+
+  let a = open $receipt_a
+  let b = open $receipt_b
+
+  # Flatten the fields we care about
+  let fields = [
+    ["image.version"        {|r| $r.image?.version? | default ""}]
+    ["image.name"           {|r| $r.image?.name? | default ""}]
+    ["image.format"         {|r| $r.image?.format? | default ""}]
+    ["build.host"           {|r| $r.build?.host? | default ""}]
+    ["build.profile"        {|r| $r.build?.profile? | default ""}]
+    ["build.os_version"     {|r| $r.build?.os_version? | default ""}]
+    ["build.arch"           {|r| $r.build?.arch? | default ""}]
+    ["build.genoa_version"  {|r| $r.build?.genoa_version? | default ""}]
+    ["agent.name"           {|r| $r.agent?.name? | default ""}]
+    ["agent.version"        {|r| $r.agent?.version? | default ""}]
+    ["hashes.image_sha256"  {|r| $r.hashes?.image_sha256? | default "" | str substring 0..15}]
+    ["built_at"             {|r| $r.built_at? | default ""}]
+  ]
+
+  let changes = ($fields | each { |f|
+    let name = $f.0
+    let getter = $f.1
+    let val_a = (do $getter $a)
+    let val_b = (do $getter $b)
+    if $val_a != $val_b {
+      {field: $name from: $val_a to: $val_b}
+    } else {
+      null
+    }
+  } | compact)
+
+  let unchanged = ($fields | each { |f|
+    let name = $f.0
+    let getter = $f.1
+    let val_a = (do $getter $a)
+    let val_b = (do $getter $b)
+    if $val_a == $val_b { $name } else { null }
+  } | compact)
+
+  {
+    action:    "diff"
+    receipt_a: $receipt_a
+    receipt_b: $receipt_b
+    changes:   $changes
+    unchanged: $unchanged
+    summary:   $"($changes | length) fields changed, ($unchanged | length) unchanged"
+  } | to json --indent 2
+}
+
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }

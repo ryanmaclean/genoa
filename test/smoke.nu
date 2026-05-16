@@ -450,6 +450,27 @@ provider = \"vultr\"
     $"action=($action) tool=($tool)"
   })
 
+  # diff_receipts — compare v0.1.2 linode and v0.1.3 vultr receipts
+  (run_test "diff_receipts" {
+    let rec = (^nu genoa.nu diff artifacts/v0.1.2/smolbsd-linode-amd64-v0.1.2.receipt.json artifacts/v0.1.3/smolbsd-vultr-amd64-v0.1.3.receipt.json | from json)
+    if ($rec.action? | default "") != "diff" {
+      error make {msg: $"expected action=diff, got: ($rec.action? | default 'missing')"}
+    }
+    let change_count = ($rec.changes | length)
+    if $change_count == 0 {
+      error make {msg: "expected at least one change between receipts, got 0"}
+    }
+    let has_version_change = ($rec.changes | any { |c| $c.field == "image.version" })
+    if not $has_version_change {
+      error make {msg: "expected image.version to differ between receipts"}
+    }
+    let has_name_change = ($rec.changes | any { |c| $c.field == "image.name" })
+    if not $has_name_change {
+      error make {msg: "expected image.name to differ between receipts"}
+    }
+    $"action=diff changes=($change_count)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------
