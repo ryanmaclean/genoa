@@ -217,13 +217,22 @@ let tests = [
     $"keys: ($keys | str join ', ')"
   })
 
-  # run_dry_pipeline — output has a "pipeline" key
+  # run_dry_pipeline — full pipeline run returns action="run", ok=true, stages record
   (run_test "run_dry_pipeline" {
-    let rec = (genoa "main run 'examples/freebsd-vultr-aarch64.toml' --dry-run")
-    if "pipeline" not-in $rec {
-      error make {msg: $"expected 'pipeline' key in result, got keys: ($rec | columns | str join ', ')"}
+    let rec = (^nu genoa.nu run examples/freebsd-vultr-aarch64.toml --dry-run | from json)
+    if ($rec.action? | default "") != "run" {
+      error make {msg: $"expected action=run, got: ($rec.action? | default 'missing'); keys: ($rec | columns | str join ', ')"}
     }
-    ($rec | get pipeline)
+    if ($rec.ok? | default false) != true {
+      error make {msg: $"expected ok=true, got ok=($rec.ok? | default false); stopped_at=($rec.stopped_at? | default 'null')"}
+    }
+    if ($rec.stages?.validate?.valid? | default false) != true {
+      error make {msg: $"expected stages.validate.valid=true, got: ($rec.stages?.validate?.valid? | default 'missing')"}
+    }
+    if not (($rec.stages?.build? | default null) != null) {
+      error make {msg: "expected stages.build to be a record, got null/missing"}
+    }
+    $"action=($rec.action) ok=($rec.ok) stopped_at=($rec.stopped_at | default 'null')"
   })
 
   # status_no_receipts_in_clean_dir — receipts_found == 0 in an empty temp dir
