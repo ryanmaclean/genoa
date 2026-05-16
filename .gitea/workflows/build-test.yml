@@ -1,0 +1,29 @@
+name: Build Dry-Run Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'profiles/**'
+      - 'examples/**'
+
+jobs:
+  dry-run-build:
+    runs-on: [self-hosted, freebsd]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dry-run UEFI build
+        run: |
+          nu genoa.nu build examples/freebsd-vultr-aarch64.toml --profile uefi --dry-run \
+            | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          print('profile:', d.get('profile'))
+          steps = d.get('steps', [])
+          print('steps:', len(steps))
+          for s in steps:
+              print(f'  [{s[\"step\"]}] {s[\"label\"]}: {s[\"action\"]}')
+          sys.exit(0 if all(s['action'] in ['would-run','render','real'] for s in steps) else 1)
+          "

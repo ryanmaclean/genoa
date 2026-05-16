@@ -418,6 +418,18 @@ provider = \"vultr\"
     $"ok=($rec.ok) checks=($checks | length) platform=($rec.platform)"
   })
 
+  # schema_json_valid — schema/manifest.v1.json is valid JSON with a $schema field
+  (run_test "schema_json_valid" {
+    let schema = open schema/manifest.v1.json
+    let has_dollar_schema = ("$schema" in $schema)
+    if not $has_dollar_schema {
+      error make {msg: "schema missing $schema field"}
+    }
+    let props = ($schema | get properties? | default {})
+    let prop_count = ($props | columns | length)
+    $"$schema present, ($prop_count) top-level properties"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

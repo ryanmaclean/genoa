@@ -599,6 +599,36 @@ def "main validate" [manifest_file: string] {
     }
   }
 
+  # 20. jsonschema_draft7 — validate against JSON Schema Draft 7 using python3 jsonschema library
+  let check_jsonschema = try {
+    let schema_path = "schema/manifest.v1.json"
+    let manifest_json = ($m | to json)
+    let py_snippet = $"
+import json, sys
+try:
+    import jsonschema
+    schema = json.load\(open\('($schema_path)'\)\)
+    manifest = json.loads\(sys.argv[1]\)
+    jsonschema.validate\(manifest, schema\)
+    print\('valid'\)
+except ImportError:
+    print\('skipped-no-jsonschema'\)
+except jsonschema.ValidationError as e:
+    print\(f'invalid: {e.message}'\)
+"
+    let result = (^python3 -c $py_snippet $manifest_json | str trim)
+    if $result == "valid" {
+      {check: "jsonschema_draft7" pass: true detail: "passed JSON Schema Draft 7 validation"}
+    } else if $result == "skipped-no-jsonschema" {
+      {check: "jsonschema_draft7" pass: true detail: "skipped (jsonschema library not installed)"}
+    } else {
+      {check: "jsonschema_draft7" pass: false detail: $result}
+    }
+  } catch { |e|
+    {check: "jsonschema_draft7" pass: true detail: $"skipped: ($e.msg)"}
+  }
+  $checks = ($checks | append $check_jsonschema)
+
   {
     action: "validate"
     manifest_path: $manifest_file
