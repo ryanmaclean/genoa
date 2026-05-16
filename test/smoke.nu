@@ -306,6 +306,57 @@ let tests = [
     $"valid=($val) provider_in_catalog=($catalog_check.pass)"
   })
 
+  # validate_ssh_key_check — bad ssh key in network.ssh_keys causes valid=false
+  (run_test "validate_ssh_key_check" {
+    let tmp = (^mktemp -t genoa-test-XXXXXX | str trim) + ".toml"
+    "schema_version = \"v1\"
+
+[image]
+name = \"test-image\"
+version = \"v0.1.0\"
+format = \"raw\"
+size_mb = 1024
+
+[target]
+os = \"freebsd\"
+os_version = \"15.0-RELEASE\"
+arch = \"amd64\"
+platform = \"generic\"
+
+[kernel]
+config = \"GENERIC\"
+
+[agent]
+name = \"test-agent\"
+version = \"v0.1.0\"
+
+[agent.source]
+type = \"local_path\"
+path = \"/usr/local/bin/test-agent\"
+
+[network]
+interface = \"vtnet0\"
+mode = \"dhcp\"
+hostname = \"test-host\"
+ssh_keys = [\"not-a-valid-key bad-format\"]
+
+profile = \"uefi\"
+
+[deploy]
+provider = \"vultr\"
+" | save --force $tmp
+    let rec = (^nu -c $"source genoa.nu; main validate '($tmp)'" | from json)
+    ^rm -f $tmp
+    if $rec.valid != false {
+      error make {msg: $"expected valid=false for bad ssh key, got valid=($rec.valid); errors=($rec.errors | to json)"}
+    }
+    let has_ssh_error = ($rec.errors | any { |e| $e | str contains "ssh_keys_format" })
+    if not $has_ssh_error {
+      error make {msg: $"expected ssh_keys_format error, got errors: ($rec.errors | to json)"}
+    }
+    $"valid=($rec.valid) ssh_keys_format error confirmed"
+  })
+
   # health — returns valid JSON with ok field and checks list containing all required tools
   (run_test "health" {
     let rec = (genoa "main health")
