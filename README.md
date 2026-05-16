@@ -1,119 +1,178 @@
-# genoa — unified CLI for smolBSD image build and deployment
+# genoa
 
-genoa is an AX-first (agent-first) orchestration tool for building FreeBSD and NetBSD cloud images with embedded agents, then dispatching them to cloud providers via structured manifests and verified receipts.
+Nushell CLI for building and deploying minimal FreeBSD cloud images with embedded AI agents.
 
-## Quickstart
+## Design principles
 
-### 1. List available providers
-```bash
-nu genoa.nu catalog
+- **AX-first**: all input/output is JSON — agents can discover, invoke, and compose without docs
+- **Schema-versioned**: manifests at `schema_version = "v1"`, catalog at `catalog/providers.v1.json`
+- **Structured receipts**: every build produces a receipt with SHA256 claims and provenance
+- **Dry-run everywhere**: every command supports `--dry-run` for safe planning before execution
+
+## Quick start
+
+```sh
+# Validate a manifest
+nu genoa.nu validate examples/freebsd-vultr-aarch64.toml
+
+# Dry-run build
+nu genoa.nu build examples/freebsd-vultr-aarch64.toml --dry-run
+
+# Full pipeline (dry)
+nu genoa.nu run examples/freebsd-vultr-aarch64.toml --dry-run
+
+# Check system readiness
+nu genoa.nu health
 ```
 
-Lists all 40+ supported cloud providers from `catalog/providers.v1.json`, with deployment mechanisms, architecture support, and BSD-native capabilities.
+## Commands
 
-### 2. Inspect the schema
-```bash
-nu genoa.nu schema
+| Command | Description |
+|---------|-------------|
+| `catalog` | Dump full provider catalog as JSON |
+| `schema` | Dump the manifest JSON schema |
+| `describe` | Summarize manifest fields (image, target, agent, network) |
+| `validate` | Validate a manifest against schema (17 checks) |
+| `build` | Build a cloud image using uefi or kboot profile; writes receipt |
+| `deploy` | Deploy an image via the provider adapter (Vultr, Linode, OCI) |
+| `publish` | Upload image to a storage backend (r2, s3, gitea, local) |
+| `run` | Full pipeline: validate → build → publish → deploy |
+| `verify` | Verify a receipt file: image exists, SHA256 matches, claims pass |
+| `verify-image` | Inspect a raw disk image for partition layout correctness |
+| `status` | Scan output dir for receipts; report real vs dry-run builds |
+| `health` | Check all 10 required build tools and platform (FreeBSD expected) |
+| `selftest` | Run smoke suite as subprocess; returns structured pass/fail JSON |
+| `sign` | Sign an image with signify or minisign |
+| `diff` | Compare two receipt files; report changed fields |
+| `snapshots` | List Vultr snapshots via CLI |
+| `snapshot-import` | Import image to Vultr by URL |
+| `snapshot-status` | Poll status of a Vultr snapshot by ID |
+| `providers` | Query provider catalog (filterable by `--id`) |
+| `receipts` | List all receipts under `artifacts/` |
+| `notify` | Post build metrics to Datadog via `pup` |
+
+## Manifest format
+
+```toml
+schema_version = "v1"
+
+[image]
+name        = "smolbsd-vultr-aarch64"  # artifact basename
+version     = "v0.1.0"                 # semver, vN.N.N required
+format      = "raw"                    # raw | vmdk | vhd
+size_mb     = 4096                     # minimum 512
+description = "Minimal FreeBSD for Vultr aarch64 via ISO boot"
+
+[target]
+os         = "freebsd"
+os_version = "15.0-RELEASE"
+arch       = "aarch64"                 # amd64 | aarch64
+platform   = "generic"
+
+[kernel]
+config      = "GENERIC"
+strip_debug = true
+
+[packages]
+include = [
+  "FreeBSD-runtime",
+  "FreeBSD-clibs",
+  "FreeBSD-rc",
+  "FreeBSD-utilities",
+  "FreeBSD-pkg-bootstrap",
+]
+
+[agent]
+name    = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type   = "url"
+url    = "https://gitea.local:3000/ii/ii-agent/releases/download/v0.1.0-freebsd-aarch64/ii-agent"
+sha256 = "0000..."   # placeholder triggers validator warning
+
+[agent.rc_service]
+enabled = true
+name    = "ii_agent"
+
+[network]
+interface = "vtnet0"   # must match provider conventions
+mode      = "dhcp"
+hostname  = "smolbsd-vultr"
+
+profile = "uefi"       # uefi | kboot
+
+[deploy]
+provider = "vultr"     # must match an id in catalog/providers.v1.json
+
+[metadata]
+builder_notes  = "Raw disk image for Vultr snapshot-url import"
+target_region  = "global"
 ```
 
-Prints `schema/manifest.v1.json` — the JSON Schema for manifest TOML files. Agents use this to discover and validate manifest structure without prior knowledge.
+## Supported providers
 
-### 3. Build an image
-```bash
-nu genoa.nu describe examples/freebsd-vultr-aarch64.toml
-nu genoa.nu build examples/freebsd-vultr-aarch64.toml --profile uefi
+Providers with genoa adapters (`deployment_path` → adapter file):
+
+| Provider | Method | Formats | Arch |
+|----------|--------|---------|------|
+| Vultr | `snapshot-url` | raw | amd64, aarch64 |
+| Akamai Cloud (Linode) | `rescue-dd` | raw | amd64, aarch64 |
+| Amazon EC2 | `ami-import` | raw, vmdk, vhd | amd64, aarch64 |
+| Google Compute Engine | `custom-image` | raw | amd64, aarch64 |
+
+The full catalog (35+ entries) is machine-readable at `catalog/providers.v1.json`.
+Query it with: `nu genoa.nu providers` or `nu genoa.nu catalog | jq '.providers[] | .id'`.
+
+## Build profiles
+
+### UEFI (`profiles/uefi.nu`)
+
+For providers that accept raw disk images via URL import. Uses GPT + FAT16 ESP (128 MB) + UFS2 root. Writes `loader.conf` and `rc.conf` into the image filesystem. Real builds require FreeBSD (`mdconfig`, `gpart`, `newfs_msdos`, `newfs`).
+
+### kboot (`profiles/kboot.nu`)
+
+For providers that require ext4 boot partitions (Linode, GCE). Uses GRUB2 + Linux mini-kernel + `loader.kboot`. Execution is gated on Linux — tools (`sgdisk`, loop devices, `bash`) are Linux-only. Currently generates dry-run plans only on non-Linux hosts.
+
+## Receipt schema
+
+Every build produces `<output_dir>/<name>-<version>.receipt.json`:
+
+```json
+{
+  "schema_version": "v1",
+  "receipt_id": "<uuid>",
+  "built_at": "<rfc3339>",
+  "manifest_path": "examples/freebsd-vultr-aarch64.toml",
+  "image":  { "name": "", "version": "", "format": "", "output_path": "" },
+  "build":  { "host": "", "profile": "", "os_version": "", "arch": "", "genoa_version": "", "dry_run": false },
+  "agent":  { "name": "", "version": "", "install_path": "" },
+  "hashes": { "image_sha256": "", "manifest_sha256": "" },
+  "claims": [{ "claim": "", "probe": "", "expect": "" }]
+}
 ```
 
-- `describe` parses the manifest and prints a structured summary of all sections and their resolved values.
-- `build` executes the profile (uefi / kboot), emits image + receipt with attestation.
-- Optional `--dry-run` shows what would happen without actually building.
+Verify a receipt: `nu genoa.nu verify out/smolbsd-v0.1.0.receipt.json`
 
-## Subcommands
+## Development
 
-```nushell
-genoa catalog                            # List providers from catalog/providers.v1.json
-genoa schema                             # Print manifest schema (JSON Schema)
-genoa describe <manifest.toml>           # Parse manifest, print structured section summary
-genoa validate <manifest.toml>           # Validate manifest against schema, return check results
-genoa build <manifest.toml> [--profile uefi|kboot] [--dry-run]
-genoa publish <image> [--backend r2|s3|gitea]
-genoa deploy <manifest.toml> --provider <id>
-genoa verify <image> <receipt.json>
-genoa run <manifest.toml> [--provider <id>] [--backend r2|s3|gitea] [--dry-run]
-genoa status [--dir <path>]              # Scan for receipts, return aggregate build summary
-```
-
-`run` is the end-to-end pipeline: validate → build → publish → deploy, returning a combined JSON result.
-
-## Core concepts
-
-**Manifest** (TOML)
-- Declarative image specification: OS, kernel, packages, agent payload, network config, deployment target.
-- Versioned schema: v1 = current (field additions backcompat).
-- Includes `target.build_host` for remote FreeBSD build hosts (see Remote build host below).
-
-**Profile** (enum: uefi, kboot)
-- Boot loader strategy selected at build time.
-- Dispatches to `profiles/uefi.nu` or `profiles/kboot.nu`.
-- Both execute real commands on FreeBSD via `run_step`; on non-FreeBSD hosts with `--dry-run`, they return a structured plan.
-
-**Receipt** (JSON)
-- Attestation envelope emitted alongside every image.
-- Contains: build provenance, agent source + hash, hashes of image/manifest/kernel config.
-- Verifiable claims array for fleet-eval integration.
-
-**Provider** (catalog entry)
-- Cloud provider descriptor: ID, display name, BYOI support, supported architectures, BSD support.
-- `deployment_path` field routes dispatch logic: `rescue-dd`, `byoi-api`, `snapshot-url`.
-- Read from `catalog/providers.v1.json`.
-
-## Adapters
-
-**vultr.nu** — makes real Vultr API calls. Requires `VULTR_API_KEY`. Supports snapshot-from-URL (upload a public image URL, Vultr imports it). Dry-run returns plan JSON without credentials or API calls.
-
-**linode.nu** — generates a structured rescue+dd deployment plan (Path 3, officially documented by Linode): boot-to-rescue, SSH access, image verify, `curl | dd` write, reboot. No credentials required to generate the plan.
-
-**oci.nu** — stub; returns `{"action":"stub"}` for unsupported providers.
-
-## Remote build host
-
-Set `target.build_host = "user@host"` (or `"user@host:port"`) in the manifest. When present, `genoa build` SCPs the manifest to the host and runs the build via SSH, returning the remote result. Useful when the local machine is not FreeBSD.
-
-## Testing
-
-```bash
+```sh
+# Run smoke suite (32 tests)
 nu test/smoke.nu
+
+# Run full self-test (structured JSON output)
+nu genoa.nu selftest
+
+# Check build tool dependencies
+nu genoa.nu health
 ```
 
-16 smoke tests covering catalog, schema, describe, validate, build (dry-run, uefi, kboot), deploy (Vultr dry-run, Linode), publish (dry-run), verify, run (dry-run), and missing-file error handling.
+## Infrastructure
 
-## File layout
+- **Buildworld**: FreeBSD 15 amd64 on Vultr (2 vCPU, 4 GB RAM, 80 GB disk)
+- **Gitea**: `string/genoa` repo on fleet Gitea — releases published there
+- **CI**: GitHub Actions (smoke + validate-manifests) + Gitea Actions (FreeBSD native, pending Tailscale auth)
 
-| Path | Purpose |
-|---|---|
-| `genoa.nu` | Main CLI (all subcommands) |
-| `publish.nu` | Standalone publish helper |
-| `schema/manifest.v1.json` | JSON Schema for manifests |
-| `schema/receipt.v1.json` | JSON Schema for receipts |
-| `catalog/providers.v1.json` | Provider catalog (40 entries) |
-| `profiles/uefi.nu` | UEFI profile — real FreeBSD commands |
-| `profiles/kboot.nu` | kboot profile — real FreeBSD commands |
-| `adapters/vultr.nu` | Vultr adapter — real API calls |
-| `adapters/linode.nu` | Linode adapter — rescue+dd plan |
-| `formats/convert.nu` | Image format conversion |
-| `templates/` | uefi/, kboot/, publish/ build templates |
-| `docs/agent-port-quickstart.md` | LLM-first quickstart |
-| `test/smoke.nu` | 16 smoke tests |
+## License
 
-## Design notes
-
-**AX-first**
-- Manifests are TOML (structured, schema'd, versioned).
-- All output is JSON (catalog, schema, receipts, plan, hashes).
-- No prose parsing required.
-- Single `catalog` endpoint lists all providers; dispatch is deterministic by ID + path.
-- See `docs/agent-port-quickstart.md` for the agent-optimized onboarding path.
-
-**Attestation** — every build emits a receipt with image SHA256, manifest SHA256, agent source + SHA256. Verifiable by fleet-eval: `fleet-eval verify "image built" --probe "sha256sum $image" --expect "..."`
-
-**License** — BSD-2-Clause (MIT-compatible). All dependencies must be MIT, BSD-2-Clause, BSD-3-Clause, or Apache-2.0.
+BSD-2-Clause

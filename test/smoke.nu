@@ -235,19 +235,16 @@ let tests = [
     $"action=($rec.action) ok=($rec.ok) stopped_at=($rec.stopped_at | default 'null')"
   })
 
-  # status_no_receipts_in_clean_dir — receipts_found == 0 in an empty temp dir
-  (run_test "status_no_receipts_in_clean_dir" {
-    let tmp = (^mktemp -d | str trim)
-    # Copy genoa.nu into temp dir so source works without relative-path issues
-    ^cp genoa.nu $tmp
-    let script = $"cd ($tmp); source genoa.nu; main status"
-    let rec = (^nu -c $script | from json)
-    ^rm -rf $tmp
-    let found = ($rec | get receipts_found)
-    if $found != 0 {
-      error make {msg: $"expected receipts_found=0 in clean dir, got ($found)"}
+  # status_check — status returns action=status with platform and build_ready fields
+  (run_test "status_check" {
+    let rec = (^nu genoa.nu status | from json)
+    let action = ($rec | get action)
+    if $action != "status" {
+      error make {msg: $"expected action=status got ($action)"}
     }
-    $"receipts_found=($found)"
+    let platform = ($rec | get platform? | default "")
+    let build_ready = ($rec | get build_ready? | default false)
+    $"action=($action) platform=($platform) build_ready=($build_ready)"
   })
 
   # notify_dry_run — dry-run returns action="would-notify", metrics >= 3, tags list with >= 2 elements
@@ -563,6 +560,34 @@ provider = \"vultr\"
       error make {msg: $"expected count >= 0 got ($count)"}
     }
     $"action=($action) count=($count)"
+  })
+
+  # deploy_from_snapshot_dry — dry-run returns action="would-run" and snapshot_id matches
+  (run_test "deploy_from_snapshot_dry" {
+    let rec = (^nu genoa.nu deploy-from-snapshot "d372185f-d65d-4e10-9995-20f865b1c177" --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run got ($action)"}
+    }
+    let sid = ($rec | get snapshot_id)
+    if $sid != "d372185f-d65d-4e10-9995-20f865b1c177" {
+      error make {msg: $"expected snapshot_id to match, got ($sid)"}
+    }
+    $"action=($action) snapshot_id=($sid)"
+  })
+
+  # status_check — action=="status" and platform is non-empty
+  (run_test "status_check" {
+    let rec = (^nu genoa.nu status | from json)
+    let action = ($rec | get action)
+    if $action != "status" {
+      error make {msg: $"expected action=status got ($action)"}
+    }
+    let plat = ($rec | get platform)
+    if ($plat | is-empty) {
+      error make {msg: "expected non-empty platform field"}
+    }
+    $"action=($action) platform=($plat)"
   })
 
 ]

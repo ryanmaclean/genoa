@@ -175,6 +175,8 @@
         "amd64"
       ],
       "deployment_path": "snapshot-url",
+      "freebsd_support": "native",
+      "netbsd_support": "experimental",
       "notes": "Best FreeBSD experience among mid-tier providers as of 2025. Stock images use UFS root. IPv6 available in all 33 regions. No aarch64 compute available. Max 2 custom ISOs per account."
     },
     {

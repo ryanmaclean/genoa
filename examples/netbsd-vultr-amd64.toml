@@ -1,0 +1,44 @@
+schema_version = "v1"
+profile = "netbsd"
+
+[image]
+name = "smolnetbsd-vultr-amd64"
+version = "v0.1.0"
+format = "raw"
+size_mb = 2048
+description = "Minimal NetBSD 10 for Vultr amd64"
+
+[target]
+os = "netbsd"
+os_version = "10.0"
+arch = "amd64"
+platform = "generic"
+
+[kernel]
+config = "GENERIC"
+strip_debug = true
+
+[agent]
+name = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type = "url"
+url = "https://github.com/ryanmaclean/ii-agent/releases/download/v0.1.0/ii-agent-netbsd-amd64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[agent.rc_service]
+enabled = true
+name = "ii_agent"
+
+[network]
+interface = "vioif0"
+mode = "dhcp"
+hostname = "smolnetbsd"
+
+[deploy]
+provider = "vultr"
+region = "lax"
+
+[metadata]
+builder_notes = "NetBSD 10 raw image. Requires pkgsrc for agent. Profile is planning-stub only."

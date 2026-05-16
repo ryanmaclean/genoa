@@ -1,6 +1,7 @@
 #!/usr/bin/env nu
 source profiles/uefi.nu
 source profiles/kboot.nu
+source profiles/netbsd.nu
 source adapters/linode.nu
 source adapters/vultr.nu
 source adapters/aws.nu
@@ -153,9 +154,11 @@ def "main build" [
   }
 
   let build_result = if not ($profile_file | path exists) {
-    {action: "failed", reason: $"unknown profile: ($p); supported: uefi, kboot", profile: $p}
+    {action: "failed", reason: $"unknown profile: ($p); supported: uefi, kboot, netbsd", profile: $p}
   } else if $p == "kboot" {
     kboot_build $m $dry_run
+  } else if $p == "netbsd" {
+    netbsd_build $m $dry_run
   } else {
     uefi_build $m $dry_run
   }
@@ -795,76 +798,77 @@ def "main verify" [receipt_file: string, --image: string = ""] {
   } | to json --indent 2
 }
 def "main status" [--dir: string = "./out"] {
-  # Scan the configured output directory for receipt files
-  let dir_exists = ($dir | path exists)
-  let out_receipts = if $dir_exists {
-    let g = try { glob $"($dir)/*.receipt.json" } catch { [] }
-    if ($g | is-empty) {
-      # Fallback: ls-based scan in case glob path resolution differs
-      try { ls $dir | where name =~ "receipt\\.json" | get name } catch { [] }
-    } else { $g }
-  } else { [] }
+  # Derive genoa_version from artifacts/ directory (latest vN.N.N dir)
+  let genoa_version = try {
+    let art_dirs = (glob "artifacts/v*" | where { |d| ($d | path type) == "dir" } | each { |d| $d | path basename } | sort --reverse)
+    if ($art_dirs | is-empty) { "unknown" } else { $art_dirs | first }
+  } catch { "unknown" }
 
-  # Also scan current directory (non-recursive) for receipts placed at the root
-  let cur_receipts = try { glob "*.receipt.json" } catch { [] }
+  # Platform via uname
+  let platform = try { ^uname -s | str trim } catch { "unknown" }
 
-  let all_receipts = ($out_receipts | append $cur_receipts | uniq)
-
-  if ($all_receipts | is-empty) {
-    return ({
-      action: "status"
-      receipts_found: 0
-      scanned_dir: $dir
-      dir_exists: $dir_exists
-      message: (if $dir_exists { $"No receipts found in ($dir). Run `genoa build <manifest>` to create one." } else { $"Directory ($dir) does not exist. Run `genoa build` first." })
-      tip: "Receipts are written to <image.output_dir>/<name>-<version>.receipt.json (default: ./out/)"
-    } | to json --indent 2)
-  }
-
-  let parsed = $all_receipts | each { |path|
-    let r = try { open $path } catch { null }
-    if $r == null { return {path: $path, status: "unreadable"} }
-    # v1 nested fields with v0 flat fallbacks
-    let img_path_v = $r.image?.output_path? | default ($r.image_path? | default "")
-    let is_dry_v   = $r.build?.dry_run?     | default ($r.dry_run?    | default false)
-    let prof_v     = $r.build?.profile?     | default ($r.profile?    | default "unknown")
-    let schema_v   = $r.schema_version? | default "unknown"
-    let img_sha_v  = $r.hashes?.image_sha256? | default ($r.image_sha256? | default "")
-    {
-      path: $path
-      receipt_id: ($r.receipt_id? | default "unknown")
-      image_path: $img_path_v
-      image_exists: ($img_path_v | path exists)
-      profile: $prof_v
-      built_at: ($r.built_at? | default "unknown")
-      dry_run: $is_dry_v
-      manifest_path: ($r.manifest_path? | default "unknown")
-      sha256_placeholder: ($img_sha_v == "dry-run-placeholder" or $img_sha_v == "PLACEHOLDER_DRY_RUN")
-      schema_version: $schema_v
-      legacy: ($schema_v != "v1")
+  # build_ready: true only on FreeBSD with all health tools present
+  let build_ready = try {
+    if $platform != "FreeBSD" { false } else {
+      let h = (^nu genoa.nu health | from json)
+      ($h.ok? | default false)
     }
-  }
+  } catch { false }
 
-  let real_builds     = ($parsed | where dry_run == false)
-  let dry_runs        = ($parsed | where dry_run == true)
-  let images_on_disk  = ($parsed | where image_exists == true)
-  let legacy_receipts = ($parsed | where legacy == true)
+  # recent_builds: 3 most recent receipts from artifacts/
+  let recent_builds = try {
+    let receipt_files = (glob "artifacts/**/*.receipt.json" | sort --reverse | first 3)
+    $receipt_files | each { |f|
+      let r = try { open $f } catch { {} }
+      {
+        path:       $f
+        version:    ($r.image?.version?  | default "")
+        image_name: ($r.image?.name?     | default "")
+        profile:    ($r.build?.profile?  | default "")
+        built_at:   ($r.built_at?        | default "")
+        host:       ($r.build?.host?     | default "")
+      }
+    }
+  } catch { [] }
+
+  # snapshots: vultr snapshot list (wrapped in try so it works without CLI)
+  let snapshots = try {
+    let vultr_bin = find_vultr
+    if $vultr_bin == null { null } else {
+      let raw = try { ^$vultr_bin snapshot list --output json | from json } catch { null }
+      if $raw == null { null } else {
+        let snaps = ($raw.snapshots? | default [])
+        let latest = if ($snaps | is-empty) { null } else {
+          let s = ($snaps | sort-by date_created --reverse | first)
+          {id: ($s.id? | default ""), status: ($s.status? | default ""), description: ($s.description? | default "")}
+        }
+        {count: ($snaps | length), latest: $latest}
+      }
+    }
+  } catch { null }
+
+  # instances: vultr instance list (wrapped in try)
+  let instances = try {
+    let vultr_bin = find_vultr
+    if $vultr_bin == null { null } else {
+      let raw = try { ^$vultr_bin instance list --output json | from json } catch { null }
+      if $raw == null { null } else {
+        let all_inst = ($raw.instances? | default [])
+        let running = ($all_inst | where { |i| ($i.power_status? | default "") == "running" } | length)
+        {count: ($all_inst | length), running: $running}
+      }
+    }
+  } catch { null }
 
   {
-    action: "status"
-    receipts_found: ($all_receipts | length)
-    real_builds: ($real_builds | length)
-    dry_runs: ($dry_runs | length)
-    images_on_disk: ($images_on_disk | length)
-    legacy_receipts: ($legacy_receipts | length)
-    receipts: $parsed
-    next_steps: (if ($real_builds | is-empty) {
-      ["No real builds yet. Run: nu genoa.nu build <manifest.toml>"]
-    } else if ($images_on_disk | is-empty) {
-      ["Images not found at recorded paths. They may have been moved or deleted."]
-    } else {
-      ["Images ready. Run: nu genoa.nu deploy <manifest.toml> to deploy."]
-    })
+    action:         "status"
+    genoa_version:  $genoa_version
+    platform:       $platform
+    build_ready:    $build_ready
+    recent_builds:  $recent_builds
+    snapshots:      $snapshots
+    instances:      $instances
+    http_server:    "http://108.61.206.203:8080/"
   } | to json --indent 2
 }
 
@@ -1322,7 +1326,7 @@ def "main diff" [
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status  providers  receipts  instances"
+  print "Commands: catalog  schema  describe  validate  build  deploy  deploy-from-snapshot  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status  providers  receipts  instances"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }
@@ -1510,6 +1514,52 @@ def "main instances" [
   })
 
   {action: "instances" provider: $provider count: ($result | length) instances: $result} | to json --indent 2
+}
+
+def "main deploy-from-snapshot" [
+  snapshot_id: string
+  --plan: string = "vc2-1c-1gb"
+  --region: string = "lax"
+  --label: string = ""
+  --dry-run
+] {
+  let effective_label = if $label != "" {
+    $label
+  } else {
+    $"smolbsd-($snapshot_id | str substring 0..7)"
+  }
+
+  if $dry_run {
+    return ({
+      action:      "would-run"
+      provider:    "vultr"
+      snapshot_id: $snapshot_id
+      plan:        $plan
+      region:      $region
+      label:       $effective_label
+      cmd:         $"vultr instance create --snapshot ($snapshot_id) --plan ($plan) --region ($region) --label ($effective_label)"
+    } | to json --indent 2)
+  }
+
+  let vultr_bin = find_vultr
+  if $vultr_bin == null {
+    return ({action: "failed", reason: "vultr CLI not found"} | to json --indent 2)
+  }
+
+  let raw = try {
+    ^$vultr_bin instance create --snapshot $snapshot_id --plan $plan --region $region --label $effective_label --output json | from json
+  } catch { |e|
+    return ({action: "failed", reason: $"vultr instance create failed: ($e.msg)", snapshot_id: $snapshot_id} | to json --indent 2)
+  }
+
+  let inst = ($raw.instance? | default {})
+  {
+    action:      "deploy-from-snapshot"
+    instance_id: ($inst.id?       | default "")
+    ip:          ($inst.main_ip?  | default "")
+    status:      ($inst.status?   | default "")
+    snapshot_id: $snapshot_id
+  } | to json --indent 2
 }
 
 def "main notify" [receipt_file: string, --dry-run] {
