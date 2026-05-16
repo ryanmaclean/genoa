@@ -14,7 +14,7 @@
     },
     "profile": {
       "type": "string",
-      "enum": ["uefi", "kboot"],
+      "enum": ["uefi", "kboot", "netbsd"],
       "default": "uefi",
       "description": "Build profile."
     },
@@ -37,7 +37,7 @@
       "additionalProperties": false,
       "properties": {
         "os": {"type": "string", "enum": ["freebsd", "netbsd"]},
-        "os_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+-RELEASE(-p[0-9]+)?$"},
+        "os_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-RELEASE(-p[0-9]+)?)?$"},
         "arch": {"type": "string", "enum": ["amd64", "aarch64", "riscv64"]},
         "platform": {"type": "string", "default": "generic"}
       }

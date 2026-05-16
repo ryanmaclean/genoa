@@ -590,6 +590,20 @@ provider = \"vultr\"
     $"action=($action) platform=($plat)"
   })
 
+  # netbsd_build_dry — netbsd profile returns profile="netbsd" and at least 1 step
+  (run_test "netbsd_build_dry" {
+    let rec = (^nu genoa.nu build examples/netbsd-vultr-amd64.toml --profile netbsd --dry-run | from json)
+    let profile = ($rec | get profile)
+    if $profile != "netbsd" {
+      error make {msg: $"expected profile=netbsd got ($profile)"}
+    }
+    let step_count = ($rec | get steps | length)
+    if $step_count == 0 {
+      error make {msg: "expected steps to be non-empty, got 0"}
+    }
+    $"profile=($profile) steps=($step_count)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

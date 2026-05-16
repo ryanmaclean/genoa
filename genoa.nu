@@ -519,9 +519,13 @@ def "main validate" [manifest_file: string] {
   # 15. network_interface_valid — check interface matches expected patterns for provider
   let iface = ($m.network?.interface? | default "")
   let provider_for_iface = ($m.deploy?.provider? | default "")
+  let os_for_iface = ($m.target?.os? | default "freebsd")
   let iface_result = if $provider_for_iface == "vultr" {
     if ($iface | str starts-with "vtnet") {
       {pass: true, detail: $"interface=($iface) \(vultr: vtnet* ok\)"}
+    } else if ($iface | str starts-with "vioif") and $os_for_iface == "netbsd" {
+      # NetBSD uses vioif* for virtio NICs instead of vtnet*
+      {pass: true, detail: $"interface=($iface) \(vultr/netbsd: vioif* ok\)"}
     } else {
       {pass: false, detail: $"interface=($iface) does not match vtnet* for vultr"}
     }
