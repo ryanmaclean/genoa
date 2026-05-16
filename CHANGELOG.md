@@ -53,7 +53,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 **Verified:** v0.1.3 image boots fully under QEMU with EDK2 UEFI — sshd, ntpd, ii_agent, DHCP, growfs all start. `mountroot>` bug definitively gone.
 
-**Test suite:** 41/41 passing (macOS + FreeBSD buildworld + GitHub Actions)
+**Test suite:** 42/42 passing (macOS + FreeBSD buildworld + GitHub Actions)
 
 ## [v0.1.3] — 2026-05-13
 

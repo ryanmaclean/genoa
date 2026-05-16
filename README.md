@@ -188,7 +188,7 @@ Verify a receipt: `nu genoa.nu verify out/smolbsd-v0.1.0.receipt.json`
 ## Development
 
 ```sh
-# Run smoke suite (41 tests)
+# Run smoke suite (42 tests)
 nu test/smoke.nu
 
 # Run full self-test (structured JSON output)

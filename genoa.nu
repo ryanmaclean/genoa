@@ -317,14 +317,19 @@ def "main deploy" [
     error make {msg: $"provider '($pid)' not found in catalog"}
   }
   let path   = ($entry.deployment_path? | default "unknown")
-  let afile  = match $path {
-    "rescue-dd"    => "adapters/linode.nu"
-    "snapshot-url" => "adapters/vultr.nu"
-    "byoi-api"     => "adapters/oci.nu"
-    _              => null
-  }
+  # Route by provider ID first (explicit), then fall back to deployment_path
+  let afile = if $pid == "linode_akamai"   { "adapters/linode.nu" }
+         else if $pid == "vultr"            { "adapters/vultr.nu"  }
+         else if $pid == "aws_ec2"          { "adapters/aws.nu"    }
+         else if $pid == "gce_gcp"          { "adapters/gce.nu"    }
+         else if $path == "rescue-dd"       { "adapters/linode.nu" }
+         else if $path == "snapshot-url"    { "adapters/vultr.nu"  }
+         else if $path == "ami-import"      { "adapters/aws.nu"    }
+         else if $path == "custom-image"    { "adapters/gce.nu"    }
+         else if $path == "byoi-api"        { "adapters/oci.nu"    }
+         else                               { null                  }
   if $afile == null {
-    return ({action: "failed", reason: $"no adapter for deployment_path: ($path); add an adapter file or update the catalog entry", provider: $pid} | to json --indent 2)
+    return ({action: "not-implemented", reason: $"no adapter for provider '($pid)' \(deployment_path: ($path)\). Contributions welcome: add adapters/($pid).nu", provider: $pid} | to json --indent 2)
   }
   if not ($afile | path exists) {
     return ({action: "failed", reason: $"adapter file not found: ($afile)", provider: $pid} | to json --indent 2)
