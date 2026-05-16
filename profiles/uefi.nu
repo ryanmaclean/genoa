@@ -413,10 +413,31 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step9d.label, exit_code: 1, detail: $step9d}
     }
 
+    # ── step 11b: install_packages ─────────────────────────────────────────
+    let packages = $manifest.packages?.include? | default []
+    let step11b = if ($packages | is-empty) {
+        {step: "11b" label: "install_packages" action: "skipped" note: "no packages in manifest"}
+    } else if $dry_run {
+        {step: "11b" label: "install_packages" action: "would-run"
+         cmd: $"pkg -c /mnt/rootfs install -y ($packages | str join ' ')"
+         packages: $packages}
+    } else {
+        run_step {
+            step: "11b"
+            label: "install_packages"
+            action: "would-run"
+            cmd: $"pkg -c /mnt/rootfs install -y ($packages | str join ' ')"
+            packages: $packages
+            description: $"Install ($packages | length) packages into rootfs via pkg"
+        } $dry_run
+    }
+    if $step11b.action == "failed" {
+        return {action: "build-failed" failed_step: $step11b.label exit_code: $step11b.exit_code detail: $step11b}
+    }
+
     # ── step 12: inject_agent ───────────────────────────────────────────────
-    # For Nu-script agents (e.g. ii-agent) the binary lands as <name>.nu so
-    # the rc.d wrapper can invoke: /usr/local/bin/nu /usr/local/bin/<name>.nu
-    let agent_dest = if $agent_name == "ii-agent" { $"($agent_name).nu" } else { $agent_name }
+    # Agent is now a portable /bin/sh script; no .nu suffix needed.
+    let agent_dest = $agent_name
     let step12_cmds = if ($agent_name | is-empty) { [] } else { [
         "mkdir -p /mnt/rootfs/usr/local/bin /mnt/rootfs/usr/local/etc/rc.d"
         $"cp ./out/($agent_name) /mnt/rootfs/usr/local/bin/($agent_dest)"
@@ -567,6 +588,9 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
                 output_path: "/mnt/rootfs/etc/rc.conf"
                 preview: ($rc_conf_rendered | str substring 0..120)
             }
+
+            # ── 11b. install_packages ─────────────────────────────────────────
+            $step11b
 
             # ── 12. inject_agent ──────────────────────────────────────────────
             $step12
