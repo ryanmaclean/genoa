@@ -1,5 +1,4 @@
 #!/bin/sh
-#
 # PROVIDE: ii_agent
 # REQUIRE: NETWORKING
 # KEYWORD: shutdown
@@ -16,14 +15,28 @@ rcvar="${name}_enable"
 : ${ii_agent_enable:="NO"}
 : ${ii_agent_endpoint:="http://localhost:7071/task"}
 
-command="/usr/local/bin/nu"
-command_args="/usr/local/bin/ii-agent.nu start --endpoint ${ii_agent_endpoint}"
+command="/usr/local/bin/ii-agent"
+command_args="start"
+ii_agent_env="II_AGENT_ENDPOINT=${ii_agent_endpoint}"
+pidfile="/var/run/ii_agent.pid"
+
 start_cmd="ii_agent_start"
+stop_cmd="ii_agent_stop"
 
 ii_agent_start()
 {
-    echo "Starting ii_agent."
-    ${command} ${command_args} &
+    export II_AGENT_ENDPOINT="${ii_agent_endpoint}"
+    /usr/sbin/daemon -P ${pidfile} -o /var/log/ii_agent.log -f ${command} start
+    echo "${name} started."
+}
+
+ii_agent_stop()
+{
+    if [ -f ${pidfile} ]; then
+        kill $(cat ${pidfile}) 2>/dev/null
+        rm -f ${pidfile}
+        echo "${name} stopped."
+    fi
 }
 
 load_rc_config $name

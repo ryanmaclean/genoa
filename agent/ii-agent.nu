@@ -1,8 +1,18 @@
 #!/usr/bin/env nu
-# ii-agent — minimal cloud agent for genoa images
-# Runs as a service via /usr/local/etc/rc.d/ii_agent
-# All I/O: JSON. AX-first.
+# ii-agent.nu — OPTIONAL rich Nushell version of ii-agent
 # SPDX-License-Identifier: Apache-2.0
+#
+# This is NOT the primary agent deployed into images. The primary agent is
+# agent/ii-agent (POSIX /bin/sh), which works from FreeBSD base.txz alone
+# with no ports or packages required.
+#
+# This .nu version is retained for development/testing on hosts where Nushell
+# is available. It provides richer structured output (indented JSON, elapsed
+# timing, combined stdout/stderr fields) but requires /usr/local/bin/nu.
+#
+# To use on a target with Nu installed:
+#   nu /usr/local/bin/ii-agent.nu version
+# The rc.d script does NOT reference this file; it invokes ii-agent directly.
 
 const VERSION = "v0.2.0"
 const DEFAULT_PORT = 7070

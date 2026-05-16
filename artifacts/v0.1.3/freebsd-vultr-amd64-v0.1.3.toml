@@ -43,3 +43,4 @@ region = "lax"
 
 [metadata]
 builder_notes = "v0.1.3: critical fix - loader.conf and rc.conf now written to image disk"
+ssh_note = "add your public key to network.ssh_keys before building for SSH access; this image has ssh_keys = [] so no authorized_keys was injected — console (KVM) login only"
