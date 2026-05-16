@@ -3,6 +3,60 @@
 # Bypasses ext3/ext4 requirement entirely by writing raw bytes directly to /dev/sda
 # SPDX-License-Identifier: BSD-2-Clause
 
+# linode_rescue_plan — returns the full rescue-dd deployment plan as a structured record.
+# Callers pass the manifest and image_url (from a publish receipt); sha256 is optional.
+export def linode_rescue_plan [
+  manifest: record
+  image_url: string
+  --sha256: string = ""   # expected SHA256 of the image (from receipt); leave empty if unknown
+] {
+  let linode_id = ($manifest | get deploy?.linode_id? | default null)
+  let region    = ($manifest | get deploy?.region?    | default "us-east")
+  let hostname  = ($manifest | get network?.hostname? | default "smolbsd")
+
+  let sha256_val = if $sha256 == "" { "" } else { $sha256 }
+
+  let verify_cmd = if $sha256_val == "" {
+    "# sha256 not available yet — fill in from receipt after publish"
+  } else {
+    $"echo '($sha256_val)  /dev/sda' | sha256sum -c"
+  }
+
+  {
+    action:           "rescue-dd-plan"
+    provider:         "linode_akamai"
+    method:           "rescue-dd"
+    linode_id:        $linode_id
+    region:           $region
+    hostname:         $hostname
+    image_url:        $image_url
+    rescue_boot_cmd:  (if $linode_id != null {
+                         $"linode-cli linodes rescue ($linode_id)"
+                       } else {
+                         "linode-cli linodes rescue <linode_id>"
+                       })
+    rescue_ssh_note:  "SSH into rescue: ssh root@<linode-ip> (use Lish console if SSH unavailable)"
+    dd_cmd:           $"wget -O - ($image_url) | dd of=/dev/sda bs=1M status=progress"
+    verify_cmd:       $verify_cmd
+    reboot_cmd:       (if $linode_id != null {
+                         $"linode-cli linodes reboot ($linode_id)"
+                       } else {
+                         "linode-cli linodes reboot <linode_id>"
+                       })
+    wait_ssh_note:    $"ssh root@<linode-ip> — expect FreeBSD login prompt for ($hostname)"
+    steps: [
+      "1. Boot Linode into rescue mode via Linode Manager or CLI"
+      "2. SSH into rescue environment (or use Lish console)"
+      $"3. Run: wget -O - ($image_url) | dd of=/dev/sda bs=1M status=progress"
+      "4. Verify SHA256 of /dev/sda matches receipt"
+      "5. Reboot Linode back into normal mode"
+      "6. Wait 60-90 seconds for FreeBSD to boot"
+      "7. SSH as root (key from manifest.network.ssh_keys)"
+    ]
+    note: "Linode rescue mode uses a minimal Debian (Finnix) environment. Image must be served via HTTP/HTTPS. dd writes directly to /dev/sda (raw disk, no partition table needed for genoa images)."
+  }
+}
+
 export def linode_deploy [
   manifest: record
   image_path: string
@@ -15,112 +69,37 @@ export def linode_deploy [
 
   # Dry-run guard FIRST — before any file existence checks
   if $dry_run {
-    let image_sha256 = "dry-run-placeholder"
-    let steps = [
-      {
-        step: 1
-        action: "create_linode"
-        automated: true
-        command: "linode-cli linodes create"
-        cmd: $"linode-cli linodes create --type ($plan) --region ($region) --no-image --label ($image_name)-temp --json"
-        description: "Create a raw Linode with unformatted disk (bypasses ext3/ext4 requirement)"
-        args: {
-          type: $plan
-          region: $region
-          image: ""
-          label: $"($image_name)-temp"
-        }
-        notes: [
-          "Create disk as RAW/unformatted, NOT ext3/ext4"
-          "This avoids the image upload filesystem requirement"
-          "Linode returns instance ID"
-        ]
-        response_fields: ["id"]
-      }
-      {
-        step: 2
-        action: "boot_rescue"
-        automated: true
-        command: "linode-cli linodes rescue"
-        cmd: "linode-cli linodes rescue <id-from-step-1> --devices.sda.disk_id=<disk-id> --json"
-        description: "Boot into Finnix rescue mode"
-        args: {
-          linode_id: "<id-from-step-1>"
-        }
-        notes: [
-          "Rescue mode boots Finnix (Debian-based live system)"
-          "No filesystem check enforced in rescue mode"
-          "SSH will be available after boot"
-        ]
-      }
-      {
-        step: 3
-        action: "poll_rescue_ready"
-        automated: true
-        description: "Poll until status=running (max 20 × 15s)"
-        command: "linode-cli linodes view"
-        cmd: "linode-cli linodes view <id-from-step-1> --json"
-        args: {linode_id: "<id-from-step-1>"}
-      }
-      {
-        step: 4
-        action: "dd_image"
-        automated: false
-        manual_reason: "Requires SSH access to rescue shell; cannot automate without pre-provisioned SSH key and IP"
-        cmd: $"ssh root@<rescue-ip> 'curl -fsSL ($image_path) | dd of=/dev/sda bs=1M conv=fsync status=progress'"
-        note: "SSH into rescue environment and write image to disk — may take 1-2 min after status=running"
-      }
-      {
-        step: 5
-        action: "reboot"
-        automated: true
-        command: "linode-cli linodes reboot"
-        cmd: "linode-cli linodes reboot <id-from-step-1> --json"
-        note: "Reboot into FreeBSD"
-      }
-      {
-        step: 6
-        action: "set_direct_disk_kernel"
-        automated: true
-        command: "linode-cli linodes config-update"
-        cmd: "linode-cli linodes config-update <id-from-step-1> --kernel linode/direct-disk --json"
-        description: "Switch to direct disk kernel after reboot"
-        args: {
-          linode_id: "<id-from-step-1>"
-          kernel: "linode/direct-disk"
-        }
-        notes: [
-          "Direct Disk mode uses the MBR/GPT bootloader directly"
-          "Disable all helpers — BSD has its own configuration"
-        ]
-      }
-    ]
+    # Use image_url from manifest if available; otherwise construct a placeholder
+    let effective_image_url = if $image_url != "" {
+      $image_url
+    } else {
+      $"https://<your-image-host>/($image_name).raw"
+    }
 
-    let warnings = [
-      "no-backup-service: Linode Backup Service does not support non-ext filesystems"
-      "no-password-reset: Cloud Manager password reset does not work for BSD"
-      "serial-console-required: ensure comconsole at 115200 baud in /boot/loader.conf"
-    ]
+    let rescue_plan = (linode_rescue_plan $manifest $effective_image_url)
 
     return {
-      action: "would-run"
-      provider: "linode"
-      mode: "dry-run"
-      strategy: "rescue-dd"
-      image_name: $image_name
-      image_path: $image_path
-      image_sha256: $image_sha256
-      plan: {
-        steps: $steps
-        warnings: $warnings
-        notes: [
-          "Requires linode-cli installed and LINODE_TOKEN set"
-          "SSH access to rescue environment required for manual steps"
-          "Genoa publish step must complete before deployment"
-          "This path is officially documented by Linode for FreeBSD"
-          "ZFS, UFS2, or any BSD filesystem works (no ext3/ext4 requirement for raw disks)"
-        ]
-      }
+      action:         "would-run"
+      provider:       "linode_akamai"
+      method:         "rescue-dd"
+      linode_id:      ($rescue_plan | get linode_id)
+      steps:          [
+        "boot-linode-into-rescue-mode"
+        "ssh-into-rescue-environment"
+        "wget-image-to-dev-sda"
+        "verify-sha256"
+        "reboot-linode"
+        "wait-for-boot"
+        "verify-ssh"
+      ]
+      rescue_dd_cmd:  ($rescue_plan | get dd_cmd)
+      rescue_plan:    $rescue_plan
+      note:           "Linode rescue mode uses a minimal Debian environment. Image must be served via HTTP (not HTTPS with self-signed). dd writes directly to /dev/sda (raw disk, no partition table needed)."
+      warnings: [
+        "no-backup-service: Linode Backup Service does not support non-ext filesystems"
+        "no-password-reset: Cloud Manager password reset does not work for BSD"
+        "serial-console-required: ensure comconsole at 115200 baud in /boot/loader.conf"
+      ]
     }
   }
 

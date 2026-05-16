@@ -366,6 +366,36 @@ provider = \"vultr\"
     $"valid=($rec.valid) ssh_keys_format error confirmed"
   })
 
+  # verify_image_macos — on non-FreeBSD, returns skipped=true, ok=false, platform=Darwin
+  (run_test "verify_image_macos" {
+    let rec = (^nu genoa.nu verify-image out/smolbsd-vultr-amd64-v0.1.3.raw | from json)
+    if ($rec.skipped? | default false) != true {
+      error make {msg: $"expected skipped=true on non-FreeBSD, got skipped=($rec.skipped? | default false)"}
+    }
+    if ($rec.ok? | default true) != false {
+      error make {msg: $"expected ok=false on non-FreeBSD, got ok=($rec.ok? | default true)"}
+    }
+    let plat = ($rec.platform? | default "")
+    if $plat == "FreeBSD" {
+      error make {msg: "expected non-FreeBSD platform in skipped path, got FreeBSD"}
+    }
+    $"skipped=($rec.skipped) ok=($rec.ok) platform=($plat)"
+  })
+
+  # linode_rescue_plan_dry — deploy --dry-run for linode returns action="would-run" and provider="linode_akamai"
+  (run_test "linode_rescue_plan_dry" {
+    let rec = (genoa "main deploy 'examples/freebsd-linode-amd64.toml' --provider linode_akamai --dry-run")
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run got ($action)"}
+    }
+    let provider = ($rec | get provider)
+    if $provider != "linode_akamai" {
+      error make {msg: $"expected provider=linode_akamai got ($provider)"}
+    }
+    $"action=($action) provider=($provider)"
+  })
+
   # health — returns valid JSON with ok field and checks list containing all required tools
   (run_test "health" {
     let rec = (genoa "main health")

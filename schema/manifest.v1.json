@@ -1,9 +1,8 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/ryanmaclean/genoa/schema/manifest.v1.json",
-  "title": "genoa unified manifest",
-  "description": "v1 manifest schema for smolBSD-for-agents image build. Feed this to `genoa build`.",
-  "version": "1.0.0",
+  "title": "genoa manifest v1",
+  "description": "Schema for genoa cloud image build manifests. AX-first: structured I/O, versioned, machine-discoverable.",
   "type": "object",
   "required": ["schema_version", "image", "target", "kernel", "agent"],
   "additionalProperties": false,
@@ -11,50 +10,55 @@
     "schema_version": {
       "type": "string",
       "const": "v1",
-      "description": "Schema version. Must be 'v1'. Bump to v2 on breaking changes."
+      "description": "Schema version identifier. Must be 'v1'."
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["uefi", "kboot"],
+      "default": "uefi",
+      "description": "Build profile. 'uefi' for GPT+FAT32+UFS2 FreeBSD images. 'kboot' for ext4-boot providers (GCE, Linode)."
     },
     "image": {
       "type": "object",
-      "description": "Image identity and output configuration.",
       "required": ["name", "version", "format", "size_mb"],
       "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9_-]*$",
-          "description": "Slug used as the output filename stem. Example: 'smolbsd-rpi5-iiagent'."
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+          "description": "Image name slug. Lowercase alphanumeric with hyphens. Used in output filename."
         },
         "version": {
           "type": "string",
-          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9.]+)?$",
-          "description": "SemVer tag for this image build. Example: 'v0.1.0'."
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "description": "Semantic version string (vN.N.N)."
         },
         "format": {
           "type": "string",
-          "enum": ["qcow2", "raw", "vmdk"],
-          "description": "Output image format. 'qcow2' preferred for QEMU (sparse, snapshot-capable)."
+          "enum": ["raw", "vmdk", "vhd", "qcow2"],
+          "description": "Output image format. 'raw' is supported for all providers."
         },
         "size_mb": {
           "type": "integer",
           "minimum": 512,
           "maximum": 65536,
-          "description": "Provisioned image size in MiB. Actual artifact will be smaller if format=qcow2 (sparse)."
+          "description": "Image size in megabytes. Minimum 512. Must accommodate base system + agent."
         },
         "output_dir": {
           "type": "string",
-          "description": "Directory where the finished image and receipt are written. Defaults to './out'.",
-          "default": "./out"
+          "default": "./out",
+          "description": "Directory for output image file. Relative to repo root."
         },
         "description": {
           "type": "string",
-          "description": "Human-readable description of this image's purpose."
+          "maxLength": 256,
+          "description": "Human-readable description of this image."
         }
       }
     },
     "target": {
       "type": "object",
-      "description": "Target platform: OS, architecture, and hypervisor profile.",
-      "required": ["os", "os_version", "arch", "platform"],
+      "required": ["os", "os_version", "arch"],
       "additionalProperties": false,
       "properties": {
         "os": {
@@ -64,8 +68,8 @@
         },
         "os_version": {
           "type": "string",
-          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-RELEASE|-STABLE|-CURRENT|-SNAPSHOT)?$",
-          "description": "OS release string. Example: '15.0-RELEASE', '10.0'."
+          "pattern": "^[0-9]+\\.[0-9]+-RELEASE(-p[0-9]+)?$",
+          "description": "OS release version (e.g. '15.0-RELEASE', '15.0-RELEASE-p5')."
         },
         "arch": {
           "type": "string",
@@ -74,131 +78,112 @@
         },
         "platform": {
           "type": "string",
-          "enum": ["qemu", "rpi4", "rpi5", "generic"],
-          "description": "Target hardware/hypervisor platform. Drives kernel config selection and loader defaults."
+          "default": "generic",
+          "description": "Target platform hint. 'generic' for most cloud providers."
         },
         "build_host": {
           "type": "string",
-          "description": "Optional: SSH destination for the build host (e.g. 'builder@fb-vm-24:2225'). Omit to build locally.",
-          "examples": ["builder@localhost:2225", "root@fbrpi406"]
+          "description": "Optional SSH destination for remote build (e.g. 'builder@fb-vm-24:2225'). Omit to build locally."
         }
       }
     },
     "kernel": {
       "type": "object",
-      "description": "Kernel configuration delta applied on top of the base config.",
       "required": ["config"],
       "additionalProperties": false,
       "properties": {
         "config": {
           "type": "string",
-          "description": "Kernel config name. Use a built-in (GENERIC, MINIMAL, RPI) or a custom config name from kernel_delta_file.",
-          "examples": ["SMOLBSD", "GENERIC", "MINIMAL", "RPI"]
-        },
-        "kernel_delta_file": {
-          "type": "string",
-          "description": "Optional path to a kernel config delta file to deploy alongside config. Relative to manifest location."
-        },
-        "extra_options": {
-          "type": "array",
-          "description": "Additional nodevice/nooptions/options lines injected into the kernel config.",
-          "items": {
-            "type": "string",
-            "pattern": "^(no)?(device|options|makeoptions)\\s+\\S.*$"
-          }
+          "description": "Kernel configuration name (e.g. 'GENERIC')."
         },
         "strip_debug": {
           "type": "boolean",
           "default": true,
-          "description": "Strip debug symbols from kernel binary. Reduces size by ~50%."
+          "description": "Strip debug symbols from kernel to reduce image size."
+        },
+        "kernel_delta_file": {
+          "type": "string",
+          "description": "Optional path to a kernel config delta file. Relative to manifest location."
+        },
+        "extra_options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(no)?(device|options|makeoptions)\\s+\\S.*$"
+          },
+          "description": "Additional nodevice/nooptions/options lines injected into the kernel config."
         }
       }
     },
     "packages": {
       "type": "object",
-      "description": "Package set for the image. Follows FreeBSD pkgbase conventions.",
       "additionalProperties": false,
       "properties": {
         "include": {
           "type": "array",
-          "description": "Packages to include. Use pkgbase names for FreeBSD base packages.",
-          "items": { "type": "string" },
-          "default": [
-            "FreeBSD-runtime",
-            "FreeBSD-clibs",
-            "FreeBSD-rc",
-            "FreeBSD-utilities",
-            "FreeBSD-pkg-bootstrap",
-            "FreeBSD-libarchive",
-            "FreeBSD-openssl-lib",
-            "FreeBSD-fetch"
-          ]
+          "items": {"type": "string"},
+          "description": "List of pkg(8) package names to install."
         },
         "exclude_patterns": {
           "type": "array",
-          "description": "Glob patterns to exclude. Applied via vm_extra_filter_base_packages().",
-          "items": { "type": "string" },
-          "default": ["*-dbg", "*-lib32", "FreeBSD-tests*", "FreeBSD-lldb*", "FreeBSD-devel*", "FreeBSD-src*"]
+          "items": {"type": "string"},
+          "description": "Glob patterns to exclude from package set."
         },
         "pkg_repo": {
           "type": "string",
-          "description": "pkg repository URL. Defaults to FreeBSD quarterly.",
-          "default": "https://pkg.freebsd.org/FreeBSD:15:aarch64/quarterly"
+          "description": "pkg repository URL."
         }
       }
     },
     "agent": {
       "type": "object",
-      "description": "Agent payload baked into the image.",
       "required": ["name", "version", "source"],
       "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
-          "description": "Agent identifier. Example: 'ii-agent', 'conclave'.",
-          "examples": ["ii-agent", "conclave", "irclaw-v2"]
+          "description": "Agent binary name (e.g. 'ii-agent')."
         },
         "version": {
           "type": "string",
-          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9.]+)?$",
-          "description": "SemVer version of the agent binary."
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "description": "Agent semantic version."
         },
         "source": {
           "type": "object",
-          "description": "Where to fetch the agent binary from.",
           "required": ["type"],
           "additionalProperties": false,
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["gitea_release", "url", "local_path"],
-              "description": "Fetch strategy."
+              "enum": ["url", "gitea_release", "local_path"],
+              "description": "How to obtain the agent binary."
             },
             "url": {
               "type": "string",
               "format": "uri",
-              "description": "Direct download URL (used when type='url' or 'gitea_release')."
+              "description": "URL to download agent binary from (when type=url)."
+            },
+            "path": {
+              "type": "string",
+              "description": "Local filesystem path to agent binary (when type=local_path)."
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$",
+              "description": "SHA256 hex digest of agent binary for verification."
             },
             "repo": {
               "type": "string",
-              "description": "Gitea repo path 'owner/name' (used when type='gitea_release')."
+              "description": "Gitea repo path 'owner/name' (used when type=gitea_release)."
             },
             "tag": {
               "type": "string",
-              "description": "Release tag (used when type='gitea_release'). Example: 'ii-agent/v0.1.0-freebsd-aarch64'."
+              "description": "Release tag (used when type=gitea_release)."
             },
             "asset": {
               "type": "string",
               "description": "Asset filename within the Gitea release."
-            },
-            "path": {
-              "type": "string",
-              "description": "Local filesystem path (used when type='local_path')."
-            },
-            "sha256": {
-              "type": "string",
-              "pattern": "^[a-fA-F0-9]{64}$",
-              "description": "Expected SHA-256 hex digest of the fetched binary. Required for url and gitea_release."
             }
           }
         },
@@ -209,11 +194,14 @@
         },
         "rc_service": {
           "type": "object",
-          "description": "Optional rc.d service configuration to start the agent at boot.",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "name": { "type": "string", "description": "rc.d service name. Example: 'ii_agent'." },
+            "enabled": {"type": "boolean"},
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,31}$",
+              "description": "rc.d service name (lowercase, underscores allowed)."
+            },
             "command_args": {
               "type": "string",
               "description": "Arguments passed to the agent binary when started by rc.d."
@@ -223,118 +211,123 @@
         "config": {
           "type": "object",
           "description": "Agent-specific configuration key/value pairs baked into the image.",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {"type": "string"}
         }
       }
     },
     "network": {
       "type": "object",
-      "description": "Network configuration baked into rc.conf.",
       "additionalProperties": false,
       "properties": {
         "interface": {
           "type": "string",
-          "default": "vtnet0",
-          "description": "Primary network interface name.",
-          "examples": ["vtnet0", "ue0", "genet0"]
+          "description": "Primary network interface name (e.g. 'vtnet0', 'eth0', 'ena0')."
         },
         "mode": {
           "type": "string",
           "enum": ["dhcp", "static"],
           "default": "dhcp"
         },
+        "hostname": {
+          "type": "string",
+          "description": "Hostname for the built image."
+        },
+        "ssh_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "SSH public keys to authorize for root login."
+        },
         "static_ip": {
           "type": "string",
-          "description": "IP/prefix in CIDR notation (used when mode=static).",
-          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+$"
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+$",
+          "description": "IP/prefix in CIDR notation (used when mode=static)."
         },
         "gateway": {
           "type": "string",
           "description": "Default gateway (used when mode=static)."
-        },
-        "hostname": {
-          "type": "string",
-          "default": "smolbsd"
-        },
-        "ssh_keys": {
-          "type": "array",
-          "description": "SSH public keys to install as root's authorized_keys in the image.",
-          "items": { "type": "string" }
         }
       }
     },
-    "profile": {
-      "type": "string",
-      "enum": ["uefi", "kboot"],
-      "default": "uefi",
-      "description": "Boot profile for the image. Drives which build profile is invoked."
-    },
     "deploy": {
       "type": "object",
-      "description": "Deployment configuration for dispatch to cloud providers.",
       "additionalProperties": false,
       "properties": {
         "provider": {
           "type": "string",
-          "description": "Provider ID from the catalog (e.g., 'vultr', 'linode'). Used to look up deployment_path."
+          "enum": ["vultr", "linode_akamai", "aws_ec2", "gce_gcp"],
+          "description": "Cloud provider to deploy to."
+        },
+        "region": {
+          "type": "string",
+          "description": "Provider region identifier."
+        },
+        "plan": {
+          "type": "string",
+          "description": "Provider instance plan/size identifier."
+        },
+        "linode_id": {
+          "type": ["integer", "null"],
+          "description": "Linode instance ID (required for rescue-dd deployment)."
         },
         "path_override": {
           "type": "string",
-          "description": "Optional override of the deployment_path from catalog. Use only if catalog entry is incomplete or needs adjustment."
+          "description": "Optional override of the deployment_path from catalog."
         },
         "oci_availability_domain": {
           "type": "string",
-          "description": "OCI availability domain for instance launch. Required for OCI provider. Example: 'Uocm:US-ASHBURN-AD-1'."
+          "description": "OCI availability domain for instance launch."
         },
         "oci_namespace": {
           "type": "string",
-          "description": "OCI Object Storage namespace. Required for OCI provider."
+          "description": "OCI Object Storage namespace."
         },
         "oci_bucket": {
           "type": "string",
-          "description": "OCI Object Storage bucket name. Defaults to 'genoa-images'.",
-          "default": "genoa-images"
+          "description": "OCI Object Storage bucket name."
         },
         "oci_compartment_id": {
           "type": "string",
-          "description": "OCI compartment OCID. Required for OCI image import and instance launch."
+          "description": "OCI compartment OCID."
         },
         "oci_subnet_id": {
           "type": "string",
-          "description": "OCI subnet OCID for instance launch. Required for OCI provider."
+          "description": "OCI subnet OCID for instance launch."
         },
         "oci_shape": {
           "type": "string",
-          "description": "OCI compute shape. Defaults to 'VM.Standard.A1.Flex' (free tier ARM).",
-          "default": "VM.Standard.A1.Flex"
+          "description": "OCI compute shape."
         }
       }
     },
     "signing": {
       "type": "object",
-      "description": "Image signing configuration. If omitted, image is unsigned.",
       "additionalProperties": false,
       "properties": {
         "tool": {
           "type": "string",
-          "enum": ["signify", "none"],
-          "default": "none",
-          "description": "Signing tool. 'signify' uses OpenBSD signify(1) / FreeBSD signify-ossl."
+          "enum": ["signify", "minisign", "openssl", "none"],
+          "default": "none"
+        },
+        "key_path": {
+          "type": "string",
+          "description": "Path to signing key file."
         },
         "key_file": {
           "type": "string",
-          "description": "Path to the signify private key file (.sec). Keep outside of version control."
+          "description": "Path to signify private key file (.sec)."
         },
         "public_key_file": {
           "type": "string",
-          "description": "Path to the signify public key file (.pub). Embedded in receipt."
+          "description": "Path to signify public key file (.pub)."
         }
       }
     },
     "metadata": {
       "type": "object",
-      "description": "Arbitrary key/value metadata carried into the receipt.",
-      "additionalProperties": { "type": "string" }
+      "description": "Freeform metadata for human notes. Not validated.",
+      "additionalProperties": true
     }
   }
 }

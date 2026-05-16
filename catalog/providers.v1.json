@@ -206,6 +206,8 @@
         "aarch64"
       ],
       "deployment_path": "rescue-dd",
+      "regions": ["us-east", "us-west", "eu-west", "ap-south", "ca-central"],
+      "rescue_dd_notes": "Boot into Debian rescue mode via Linode Manager. wget image directly to /dev/sda. Image must be uncompressed raw or gzip (wget can pipe to dd). Max practical size ~10GB due to rescue mode RAM limitations.",
       "notes": "CRITICAL: FreeBSD not officially supported. Only ext3/ext4 accepted - rules out UFS and ZFS natively. Max 6 GB uncompressed is very small for BSD images with packages. Aarch64 available for instances but not confirmed for custom image upload."
     },
     {
