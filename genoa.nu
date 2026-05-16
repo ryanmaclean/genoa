@@ -1430,28 +1430,73 @@ def "main notify" [receipt_file: string, --dry-run] {
     return ({action: "failed", error: $"receipt not found: ($receipt_file)"} | to json --indent 2)
   }
   let r = open $receipt_file
-  let profile  = $r.build?.profile?   | default "unknown"
-  let arch     = $r.build?.arch?      | default "unknown"
-  let dry      = $r.build?.dry_run?   | default false
-  let agent_n  = $r.agent?.name?      | default "unknown"
-  let img_ver  = $r.image?.version?   | default "unknown"
-  let img_name = $r.image?.name?      | default "unknown"
-  let claims   = $r.claims? | default [] | length
-  let now      = (date now | format date "%s" | into int)
+  let profile    = $r.build?.profile?    | default "unknown"
+  let arch       = $r.build?.arch?       | default "unknown"
+  let dry        = $r.build?.dry_run?    | default false
+  let agent_n    = $r.agent?.name?       | default "unknown"
+  let img_ver    = $r.image?.version?    | default "unknown"
+  let img_name   = $r.image?.name?       | default "unknown"
+  let build_host = $r.build?.host?       | default "unknown"
+  let os_ver     = $r.build?.os_version? | default "unknown"
+  let built_at   = $r.built_at?          | default ""
+  let step_count = ($r.claims? | default [] | length)
+  let size_gb    = try { $r.image?.size_gb? | default 0 } catch { 0 }
+  let now        = (date now | format date "%s" | into int)
+
+  # Compute age_hours: how many hours ago the build was completed
+  let age_hours = try {
+    let dt = ($built_at | into datetime)
+    let diff = ((date now) - $dt)
+    $diff / 1hr | math floor
+  } catch { 0 }
+
+  # Base tag list used on all metrics
+  let tags = [
+    $"version:($img_ver)"
+    $"profile:($profile)"
+    $"host:($build_host)"
+    $"os:($os_ver)"
+    $"arch:($arch)"
+    $"dry_run:($dry)"
+    $"agent_name:($agent_n)"
+    "project:genoa"
+  ]
+
+  let metrics_names = [
+    "genoa.build.success"
+    "genoa.image.size_mb"
+    "genoa.receipt.claims"
+    "genoa.build.age_hours"
+    "genoa.build.step_count"
+    "genoa.image.size_gb"
+  ]
 
   let metrics = {
     series: [
-      {metric: "genoa.build.success"  type: 1 points: [{timestamp: $now value: 1}]
-       tags: [$"profile:($profile)" $"arch:($arch)" $"dry_run:($dry)" $"agent_name:($agent_n)" "project:genoa"]}
-      {metric: "genoa.image.size_mb"  type: 3 points: [{timestamp: $now value: ($r.image?.size_mb? | default 1024)}]
-       tags: [$"profile:($profile)" $"arch:($arch)" "project:genoa"]}
-      {metric: "genoa.receipt.claims" type: 3 points: [{timestamp: $now value: $claims}]
-       tags: [$"profile:($profile)" "project:genoa"]}
+      {metric: "genoa.build.success"    type: 1 points: [{timestamp: $now value: 1}]
+       tags: $tags}
+      {metric: "genoa.image.size_mb"    type: 3 points: [{timestamp: $now value: ($r.image?.size_mb? | default 1024)}]
+       tags: $tags}
+      {metric: "genoa.receipt.claims"   type: 3 points: [{timestamp: $now value: $step_count}]
+       tags: $tags}
+      {metric: "genoa.build.age_hours"  type: 3 points: [{timestamp: $now value: $age_hours}]
+       tags: $tags}
+      {metric: "genoa.build.step_count" type: 3 points: [{timestamp: $now value: $step_count}]
+       tags: $tags}
+      {metric: "genoa.image.size_gb"    type: 3 points: [{timestamp: $now value: $size_gb}]
+       tags: $tags}
     ]
   }
 
   if $dry_run {
-    return ({action: "would-notify", receipt: $receipt_file, metrics: ($metrics.series | length), tags: [$"profile:($profile)" $"arch:($arch)"]} | to json --indent 2)
+    return ({
+      action:            "would-notify"
+      receipt:           $receipt_file
+      metrics:           ($metrics.series | length)
+      metrics_submitted: $metrics_names
+      tags:              $tags
+      status:            "ok"
+    } | to json --indent 2)
   }
 
   let tmp = $"/tmp/genoa-metrics-($now).json"
@@ -1464,7 +1509,13 @@ def "main notify" [receipt_file: string, --dry-run] {
   ^rm -f $tmp
 
   if ($result.exit_code? | default 99) == 0 {
-    {action: "notified" receipt: $receipt_file metrics_submitted: ($metrics.series | length) profile: $profile arch: $arch} | to json --indent 2
+    {
+      action:            "notify"
+      receipt:           $receipt_file
+      metrics_submitted: $metrics_names
+      tags:              ($tags | str join ",")
+      status:            "ok"
+    } | to json --indent 2
   } else {
     {action: "failed" step: "pup_metrics_submit" stderr: ($result.stderr? | default "unknown error")} | to json --indent 2
   }
