@@ -1193,10 +1193,76 @@ def "main verify-image" [
   } | to json --indent 2
 }
 
+def "main sign" [
+  image_path: string
+  --key: string = ""
+  --tool: string = ""
+  --manifest: string = ""
+  --dry-run
+] {
+  # Resolve tool and key from manifest if not overridden by CLI flags
+  let m = if $manifest != "" and ($manifest | path exists) {
+    open $manifest
+  } else {
+    {}
+  }
+  let effective_tool = if $tool != "" { $tool } else { ($m | get -o signing.tool | default "none") }
+  let effective_key  = if $key  != "" { $key  } else { ($m | get -o signing.key_path | default "") }
+
+  if $effective_tool == "none" {
+    return ({action: "unsigned", tool: "none", image: $image_path} | to json --indent 2)
+  }
+
+  # Validate tool name
+  if $effective_tool != "signify" and $effective_tool != "minisign" {
+    return ({action: "failed", reason: $"unknown signing tool: ($effective_tool). valid: signify minisign none"} | to json --indent 2)
+  }
+
+  let binary_name = $effective_tool
+  let sig_ext = if $effective_tool == "signify" { "sig" } else { "minisig" }
+  let sig_path = $"($image_path).($sig_ext)"
+  let sign_cmd = if $effective_tool == "signify" {
+    $"signify -S -s ($effective_key) -m ($image_path)"
+  } else {
+    $"minisign -S -s ($effective_key) -m ($image_path)"
+  }
+
+  if $dry_run {
+    return ({action: "would-run", tool: $effective_tool, cmd: $sign_cmd, signature_path: $sig_path, image: $image_path} | to json --indent 2)
+  }
+
+  # Validate key exists
+  if $effective_key == "" or not ($effective_key | path exists) {
+    return ({action: "failed", reason: $"signing key not found: ($effective_key)", tool: $effective_tool} | to json --indent 2)
+  }
+
+  # Validate image exists
+  if not ($image_path | path exists) {
+    return ({action: "failed", reason: $"image not found: ($image_path)", tool: $effective_tool} | to json --indent 2)
+  }
+
+  # Locate the signing binary
+  let bin_paths = ["/usr/bin" "/usr/local/bin" "/opt/homebrew/bin"]
+  let found_bin = ($bin_paths | each { |p| $"($p)/($binary_name)" } | where { |p| ($p | path exists) } | get 0?)
+  let bin = if $found_bin != null { $found_bin } else { $binary_name }
+
+  let result = try {
+    ^$bin -S -s $effective_key -m $image_path | complete
+  } catch { |e|
+    return ({action: "failed", reason: $e.msg, tool: $effective_tool} | to json --indent 2)
+  }
+
+  if $result.exit_code != 0 {
+    return ({action: "failed", reason: ($result.stderr? | default "signing tool returned non-zero exit"), tool: $effective_tool, exit_code: $result.exit_code} | to json --indent 2)
+  }
+
+  {action: "signed", tool: $effective_tool, image: $image_path, signature: $sig_path, key: $effective_key} | to json --indent 2
+}
+
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  verify  verify-image  run  status  health  selftest"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }

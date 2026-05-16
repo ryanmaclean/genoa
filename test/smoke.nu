@@ -430,6 +430,26 @@ provider = \"vultr\"
     $"$schema present, ($prop_count) top-level properties"
   })
 
+  # sign_dry_run — dry-run returns action="would-run", tool="signify", cmd and signature_path present
+  (run_test "sign_dry_run" {
+    let rec = (^nu genoa.nu sign "out/some.raw" --tool signify --key "/tmp/test.sec" --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected would-run, got ($action)"}
+    }
+    let tool = ($rec | get tool)
+    if $tool != "signify" {
+      error make {msg: $"expected tool=signify, got ($tool)"}
+    }
+    if "cmd" not-in $rec {
+      error make {msg: "expected cmd field in dry-run output"}
+    }
+    if "signature_path" not-in $rec {
+      error make {msg: "expected signature_path field in dry-run output"}
+    }
+    $"action=($action) tool=($tool)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------
