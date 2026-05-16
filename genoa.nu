@@ -1322,7 +1322,7 @@ def "main diff" [
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status  providers  receipts"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status  providers  receipts  instances"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }
@@ -1471,6 +1471,45 @@ def "main receipts" [] {
     }
   } | sort-by built_at --reverse)
   {action: "receipts" count: ($receipts | length) receipts: $receipts} | to json --indent 2
+}
+
+def "main instances" [
+  --provider: string = "vultr"
+  --all
+] {
+  let vultr = find_vultr
+  if $vultr == null {
+    return ({action: "failed", reason: "vultr CLI not found", provider: $provider} | to json --indent 2)
+  }
+
+  let raw = try {
+    ^$vultr instance list --output json | from json
+  } catch { |e|
+    return ({action: "failed", reason: $e.msg, provider: $provider} | to json --indent 2)
+  }
+
+  let all_instances = ($raw.instances? | default [])
+  let filtered = if $all {
+    $all_instances
+  } else {
+    $all_instances | where { |i| ($i.label? | default "") | str contains "smolbsd" }
+  }
+
+  let result = ($filtered | each { |i|
+    {
+      id:           ($i.id?           | default "")
+      label:        ($i.label?        | default "")
+      status:       ($i.status?       | default "")
+      power:        ($i.power_status? | default "")
+      ip:           ($i.main_ip?      | default "")
+      plan:         ($i.plan?         | default "")
+      region:       ($i.region?       | default "")
+      os:           ($i.os?           | default "")
+      date_created: ($i.date_created? | default "")
+    }
+  })
+
+  {action: "instances" provider: $provider count: ($result | length) instances: $result} | to json --indent 2
 }
 
 def "main notify" [receipt_file: string, --dry-run] {

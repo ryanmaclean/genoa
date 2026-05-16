@@ -548,6 +548,23 @@ provider = \"vultr\"
     $"action=receipts count=($count)"
   })
 
+  # instances_vultr — action=="instances", count >= 0, instances field present
+  (run_test "instances_vultr" {
+    let rec = (^nu genoa.nu instances --all | from json)
+    let action = ($rec | get action)
+    if $action != "instances" {
+      error make {msg: $"expected action=instances got ($action)"}
+    }
+    if "instances" not-in $rec {
+      error make {msg: "expected instances field in result"}
+    }
+    let count = ($rec | get count)
+    if $count < 0 {
+      error make {msg: $"expected count >= 0 got ($count)"}
+    }
+    $"action=($action) count=($count)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------
