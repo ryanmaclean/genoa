@@ -1,4 +1,5 @@
 #!/usr/bin/env nu
+# genoa — AX-first FreeBSD/NetBSD cloud image CLI. Nu 0.111.0+. All output: JSON.
 source profiles/uefi.nu
 source profiles/kboot.nu
 source profiles/netbsd.nu
