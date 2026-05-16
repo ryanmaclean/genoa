@@ -3,6 +3,58 @@
 All notable changes to genoa are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [v0.1.4-dev] — Unreleased
+
+### Added (this session, 2026-05-16)
+
+**CLI surface expansion (26 subcommands total):**
+- `sign` — image signing via signify/minisign with `--dry-run`
+- `verify-image` — mounts image and checks loader.conf/rc.conf present (FreeBSD only)
+- `diff` — compare two build receipts field by field
+- `deploy-from-snapshot` — launch Vultr instance from an existing snapshot
+- `clone-instance` — clone a running Vultr instance
+- `snapshots` / `snapshot-import` / `snapshot-status` — Vultr snapshot lifecycle
+- `instances` — list running Vultr instances (with `--all`)
+- `watch` — poll snapshot/instance until target status (with timeout)
+- `providers` — rich catalog query with `--id` filter
+- `receipts` — list all build receipts in artifacts/
+- `versions` — list published Gitea releases via API
+- `health` — check all 10 required tools + platform readiness
+- `selftest` — run smoke suite, return structured JSON
+- `notify` — enriched Datadog metrics (profile/host/os tags, age_hours, step_count)
+- `status` — full system state (snapshots, instances, recent builds, platform)
+- `run` — full validate→build→publish→deploy pipeline with per-stage results
+
+**Profiles & Providers:**
+- NetBSD profile stub (`profiles/netbsd.nu`) + example manifest
+- AWS EC2 provider entry + adapter stub + example manifest
+- GCE GCP provider entry + adapter stub + example manifest
+- Linode adapter: full rescue-dd plan with detailed per-step instructions
+
+**Validator strengthened (20 checks):**
+- `image_size_minimum` (≥512 MB)
+- `agent_sha256_not_placeholder` (warning for all-zeros/ones)
+- `network_interface_valid` (provider-aware: vtnet*/eth*/ena*/gve*)
+- `ssh_keys_format` (prefix validation)
+- `image_version_semver` (vN.N.N)
+- `jsonschema_draft7` (validates against schema/manifest.v1.json)
+
+**Schema upgraded** to JSON Schema Draft 7 (`schema/manifest.v1.json`)
+
+**Build profile (uefi.nu):**
+- Step 9d: write /etc/fstab (silences boot warnings)
+- All configs confirmed written to disk (loader.conf, rc.conf, fstab)
+
+**Infrastructure:**
+- Buildworld hardened: 2GB swap, rc.d HTTP service, SSH keepalive, Gitea act_runner registered
+- Nushell completions: `completions/genoa.nu`
+- `.gitea/workflows/`: FreeBSD native CI (pending Tailscale auth)
+- GitHub Actions upgraded to Nu 0.111.0 musl
+
+**Verified:** v0.1.3 image boots fully under QEMU with EDK2 UEFI — sshd, ntpd, ii_agent, DHCP, growfs all start. `mountroot>` bug definitively gone.
+
+**Test suite:** 41/41 passing (macOS + FreeBSD buildworld + GitHub Actions)
+
 ## [v0.1.3] — 2026-05-13
 
 ### Fixed

@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# PROVIDE: ii_agent
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+#
+# Add the following to /etc/rc.conf to enable ii-agent:
+#   ii_agent_enable="YES"
+#   ii_agent_endpoint="http://your-control-plane/task"  # optional
+
+. /etc/rc.subr
+
+name="ii_agent"
+rcvar="${name}_enable"
+
+: ${ii_agent_enable:="NO"}
+: ${ii_agent_endpoint:="http://localhost:7071/task"}
+
+command="/usr/local/bin/nu"
+command_args="/usr/local/bin/ii-agent.nu start --endpoint ${ii_agent_endpoint}"
+start_cmd="ii_agent_start"
+
+ii_agent_start()
+{
+    echo "Starting ii_agent."
+    ${command} ${command_args} &
+}
+
+load_rc_config $name
+run_rc_command "$1"
