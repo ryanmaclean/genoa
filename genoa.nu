@@ -489,7 +489,87 @@ def "main validate" [manifest_file: string] {
   $checks = ($checks | append {check: "agent_version_semver", pass: $semver_ok, detail: (if $semver_ok { $agent_ver } else { $"'($agent_ver)' does not match ^v[0-9]+\\.[0-9]+\\.[0-9]+" })})
   if not $semver_ok { $errors = ($errors | append $"agent_version_semver: '($agent_ver)' does not match semver") }
 
-  # 13. build_host_format (warn only)
+  # 13. image_size_minimum — size_mb must be >= 512
+  let size_mb = ($m.image?.size_mb? | default 0)
+  let size_ok = $size_mb >= 512
+  $checks = ($checks | append {check: "image_size_minimum", pass: $size_ok, detail: $"($size_mb) MB (min 512)"})
+  if not $size_ok { $errors = ($errors | append $"image_size_minimum: ($size_mb) MB is below minimum 512 MB") }
+
+  # 14. agent_sha256_not_placeholder — warn (not error) if sha256 is all-zeros or all-ones when source is url or gitea_release
+  let sha256_src_type = ($m.agent?.source?.type? | default "")
+  if $sha256_src_type == "url" or $sha256_src_type == "gitea_release" {
+    let sha256_val = ($m.agent?.source?.sha256? | default "")
+    let sha256_is_placeholder = if $sha256_val == "" {
+      false
+    } else {
+      ($sha256_val | split chars | uniq | length) == 1
+    }
+    let sha256_check_pass = not $sha256_is_placeholder
+    let sha256_check_detail = if $sha256_check_pass { "sha256 non-placeholder" } else { "sha256 is a placeholder (all-zeros or all-ones) — replace before production build" }
+    $checks = ($checks | append {check: "agent_sha256_not_placeholder", pass: $sha256_check_pass, detail: $sha256_check_detail})
+    if not $sha256_check_pass { $warnings = ($warnings | append "agent_sha256_not_placeholder: sha256 is a placeholder — replace before production build") }
+  }
+
+  # 15. network_interface_valid — check interface matches expected patterns for provider
+  let iface = ($m.network?.interface? | default "")
+  let provider_for_iface = ($m.deploy?.provider? | default "")
+  let iface_result = if $provider_for_iface == "vultr" {
+    if ($iface | str starts-with "vtnet") {
+      {pass: true, detail: $"interface=($iface) (vultr: vtnet* ok)"}
+    } else {
+      {pass: false, detail: $"interface=($iface) does not match vtnet* for vultr"}
+    }
+  } else if $provider_for_iface == "linode_akamai" {
+    if ($iface | str starts-with "eth") {
+      {pass: true, detail: $"interface=($iface) (linode_akamai: eth* ok)"}
+    } else if ($iface | str starts-with "vtnet") or ($iface | str starts-with "eth") {
+      {pass: true, detail: $"interface=($iface) (generic — not provider-validated)"}
+    } else {
+      {pass: true, detail: $"interface=($iface) (generic — not provider-validated)"}
+    }
+  } else if $provider_for_iface == "aws_ec2" {
+    if ($iface | str starts-with "ena") or ($iface | str starts-with "eth") {
+      {pass: true, detail: $"interface=($iface) (aws_ec2: ena*/eth* ok)"}
+    } else {
+      {pass: false, detail: $"interface=($iface) does not match ena*/eth* for aws_ec2"}
+    }
+  } else if $provider_for_iface == "gce_gcp" {
+    if ($iface | str starts-with "gve") or $iface == "ens4" {
+      {pass: true, detail: $"interface=($iface) (gce_gcp: gve*/ens4 ok)"}
+    } else {
+      {pass: false, detail: $"interface=($iface) does not match gve*/ens4 for gce_gcp"}
+    }
+  } else {
+    # Unknown provider or no provider — generic pass if vtnet* or eth*
+    {pass: true, detail: $"interface=($iface) (generic — not provider-validated)"}
+  }
+  $checks = ($checks | append ({check: "network_interface_valid"} | merge $iface_result))
+  if not $iface_result.pass { $errors = ($errors | append $"network_interface_valid: ($iface_result.detail)") }
+
+  # 16. ssh_keys_format — if network.ssh_keys is present and non-empty, validate each key
+  let ssh_keys = ($m.network?.ssh_keys? | default [])
+  if ($ssh_keys | length) > 0 {
+    let invalid_idx = ($ssh_keys | enumerate | where { |entry|
+      let k = $entry.item
+      not (($k | str starts-with "ssh-ed25519 ") or ($k | str starts-with "ssh-rsa ") or ($k | str starts-with "ecdsa-sha2-"))
+    } | get index? | default [])
+    let ssh_keys_pass = ($invalid_idx | is-empty)
+    let ssh_detail = if $ssh_keys_pass {
+      $"($ssh_keys | length) keys, all valid format"
+    } else {
+      $"invalid key format at index ($invalid_idx | first)"
+    }
+    $checks = ($checks | append {check: "ssh_keys_format", pass: $ssh_keys_pass, detail: $ssh_detail})
+    if not $ssh_keys_pass { $errors = ($errors | append $"ssh_keys_format: ($ssh_detail)") }
+  }
+
+  # 17. image_version_semver — image.version must match vN.N.N
+  let img_ver = ($m.image?.version? | default "")
+  let img_semver_ok = ($img_ver =~ '^v[0-9]+\.[0-9]+\.[0-9]+')
+  $checks = ($checks | append {check: "image_version_semver", pass: $img_semver_ok, detail: (if $img_semver_ok { $img_ver } else { $"'($img_ver)' does not match ^v[0-9]+\\.[0-9]+\\.[0-9]+" })})
+  if not $img_semver_ok { $errors = ($errors | append $"image_version_semver: '($img_ver)' does not match semver") }
+
+  # 18. build_host_format (warn only)
   let bh = ($m.target?.build_host? | default "")
   if $bh != "" {
     let bh_ok = ($bh =~ '^[a-z_][a-z0-9_.-]*@[a-z0-9._-]+(:[0-9]+)?$')
