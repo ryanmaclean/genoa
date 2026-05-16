@@ -471,6 +471,43 @@ provider = \"vultr\"
     $"action=diff changes=($change_count)"
   })
 
+  # snapshots_vultr — action=="snapshots", count >= 0, snapshots field present
+  (run_test "snapshots_vultr" {
+    let rec = (^nu genoa.nu snapshots | from json)
+    let action = ($rec | get action)
+    if $action != "snapshots" {
+      error make {msg: $"expected action=snapshots got ($action)"}
+    }
+    if "snapshots" not-in $rec {
+      error make {msg: "expected snapshots field in result"}
+    }
+    let count = ($rec | get count)
+    if $count < 0 {
+      error make {msg: $"expected count >= 0 got ($count)"}
+    }
+    $"action=($action) count=($count)"
+  })
+
+  # snapshot_import_dry — dry-run returns action="would-run", provider="vultr", url and cmd fields present
+  (run_test "snapshot_import_dry" {
+    let rec = (^nu genoa.nu snapshot-import "http://example.com/image.raw" --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run got ($action)"}
+    }
+    let provider = ($rec | get provider)
+    if $provider != "vultr" {
+      error make {msg: $"expected provider=vultr got ($provider)"}
+    }
+    if "url" not-in $rec {
+      error make {msg: "expected url field in dry-run result"}
+    }
+    if "cmd" not-in $rec {
+      error make {msg: "expected cmd field in dry-run result"}
+    }
+    $"action=($action) provider=($provider)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

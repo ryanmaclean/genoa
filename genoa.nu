@@ -1322,7 +1322,7 @@ def "main diff" [
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff"
+  print "Commands: catalog  schema  describe  validate  build  deploy  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }
@@ -1332,6 +1332,99 @@ def main [] {
 # Emit build metrics and events to Datadog via pup.
 # Reads a receipt file and posts genoa.build.* metrics.
 # Requires: pup authenticated (`pup auth status`)
+def find_vultr [] {
+  let brew = "/opt/homebrew/bin/vultr"
+  if ($brew | path exists) { return $brew }
+  let in_path = (which vultr | get 0?.path? | default null)
+  $in_path
+}
+
+def "main snapshots" [
+  --provider: string = "vultr"
+] {
+  let vultr_bin = find_vultr
+  if $vultr_bin == null {
+    return ({action: "failed", reason: "vultr CLI not found"} | to json --indent 2)
+  }
+  let raw = try {
+    ^$vultr_bin snapshot list --output json | from json
+  } catch { |e|
+    return ({action: "failed", reason: $"vultr snapshot list failed: ($e.msg)"} | to json --indent 2)
+  }
+  let snaps = ($raw.snapshots? | default [] | each { |s|
+    let size_bytes = ($s.size? | default 0 | into float)
+    let size_gb = (($size_bytes / 1073741824.0) | math round --precision 1)
+    {
+      id:           ($s.id?           | default "")
+      description:  ($s.description?  | default "")
+      status:       ($s.status?       | default "")
+      size_gb:      $size_gb
+      date_created: ($s.date_created? | default "")
+    }
+  })
+  {
+    action:    "snapshots"
+    provider:  $provider
+    snapshots: $snaps
+    count:     ($snaps | length)
+  } | to json --indent 2
+}
+
+def "main snapshot-import" [
+  image_url: string
+  --description: string = ""
+  --dry-run
+] {
+  if $dry_run {
+    return ({
+      action:   "would-run"
+      provider: "vultr"
+      url:      $image_url
+      cmd:      $"vultr snapshot create-url --url ($image_url) --description ($description)"
+    } | to json --indent 2)
+  }
+  let vultr_bin = find_vultr
+  if $vultr_bin == null {
+    return ({action: "failed", reason: "vultr CLI not found"} | to json --indent 2)
+  }
+  let raw = try {
+    ^$vultr_bin snapshot create-url --url $image_url --description $description --output json | from json
+  } catch { |e|
+    return ({action: "failed", reason: $"vultr snapshot create-url failed: ($e.msg)", url: $image_url} | to json --indent 2)
+  }
+  let snap_id = ($raw.snapshot?.id? | default "")
+  {
+    action:      "snapshot-import-queued"
+    snapshot_id: $snap_id
+    status:      "pending"
+    url:         $image_url
+  } | to json --indent 2
+}
+
+def "main snapshot-status" [
+  snapshot_id: string
+] {
+  let vultr_bin = find_vultr
+  if $vultr_bin == null {
+    return ({action: "failed", reason: "vultr CLI not found"} | to json --indent 2)
+  }
+  let raw = try {
+    ^$vultr_bin snapshot get $snapshot_id --output json | from json
+  } catch { |e|
+    return ({action: "failed", reason: $"vultr snapshot get failed: ($e.msg)", id: $snapshot_id} | to json --indent 2)
+  }
+  let s = ($raw.snapshot? | default {})
+  let size_bytes = ($s.size? | default 0 | into float)
+  let size_gb = (($size_bytes / 1073741824.0) | math round --precision 1)
+  {
+    action:      "snapshot-status"
+    id:          $snapshot_id
+    status:      ($s.status?      | default "")
+    size_gb:     $size_gb
+    description: ($s.description? | default "")
+  } | to json --indent 2
+}
+
 def "main notify" [receipt_file: string, --dry-run] {
   if not ($receipt_file | path exists) {
     return ({action: "failed", error: $"receipt not found: ($receipt_file)"} | to json --indent 2)
