@@ -633,6 +633,36 @@ provider = \"vultr\"
     $"action=($action) count=($rec | get count? | default 0)"
   })
 
+  # vultr_balance_check — deploy --dry-run still returns action="would-run" (balance check skipped in dry-run)
+  (run_test "vultr_balance_check" {
+    let rec = (^nu genoa.nu deploy examples/freebsd-vultr-aarch64.toml --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run (dry-run skips balance check), got ($action)"}
+    }
+    $"action=($action)"
+  })
+
+  # clone_instance_dry — clone-instance --dry-run returns action="would-run" with source_id, plan, region
+  (run_test "clone_instance_dry" {
+    let rec = (^nu genoa.nu clone-instance "f2656038-47fa-4de7-968e-5c1b24ce8f39" --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run, got ($action)"}
+    }
+    let source_id = ($rec | get source_id)
+    if $source_id != "f2656038-47fa-4de7-968e-5c1b24ce8f39" {
+      error make {msg: $"expected source_id to match, got ($source_id)"}
+    }
+    if "plan" not-in $rec {
+      error make {msg: "expected plan field in dry-run output"}
+    }
+    if "region" not-in $rec {
+      error make {msg: "expected region field in dry-run output"}
+    }
+    $"action=($action) source_id=($source_id)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

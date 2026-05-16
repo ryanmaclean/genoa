@@ -204,7 +204,7 @@ export def vultr_deploy [
     return {
       action: "failed"
       step: "create_instance"
-      exit_code: ($instance_raw.exit_code? | default -1)
+      exit_code: ($instance_raw.exit_code? | default 255)
       error: $combined
       snap_id: $snap_id
       provider: "vultr"
