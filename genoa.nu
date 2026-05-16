@@ -19,11 +19,25 @@ source lib/signing.nu
 source lib/suggest.nu
 
 def "main catalog" [] {
-  open "catalog/providers.v1.json" | to json --indent 2
+  let cat = open "catalog/providers.v1.json"
+  {
+    action:         "catalog"
+    schema_version: ($cat.schema_version? | default "1.0.0")
+    provider_count: ($cat.providers | length)
+    providers:      $cat.providers
+  } | to json --indent 2
 }
 
 def "main schema" [] {
-  open "schema/manifest.v1.json" | to json --indent 2
+  let s = open "schema/manifest.v1.json"
+  {
+    action:      "schema"
+    title:       ($s.title? | default "")
+    description: ($s.description? | default "")
+    schema_url:  ($s."$id"? | default "")
+    properties:  ($s.properties? | columns | default [])
+    required:    ($s.required? | default [])
+  } | to json --indent 2
 }
 
 def "main describe" [manifest_file: string] {

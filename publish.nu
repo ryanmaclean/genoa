@@ -99,6 +99,7 @@ def publish_r2 [image_path: string, dry_run: bool] {
   let expires_at = (date now) + 7day
 
   {
+    action:     "published"
     url:        $url
     sha256:     $sha256
     size_bytes: $size
@@ -152,6 +153,7 @@ def publish_s3 [image_path: string, dry_run: bool] {
   let expires_at = (date now) + 7day
 
   {
+    action:     "published"
     url:        $url
     sha256:     $sha256
     size_bytes: $size
@@ -205,6 +207,7 @@ def publish_gitea [image_path: string, dry_run: bool] {
   run-external $tea "releases" "assets" "create" "--login" "i9-gitea" "-r" "string/genoa" $tag $image_path
 
   {
+    action:     "published"
     url:        $url
     sha256:     $sha256
     size_bytes: $size_bytes
@@ -242,6 +245,7 @@ def publish_local [image_path: string, dry_run: bool] {
   ^bash -c $"cd ($dir) && python3 -m http.server 8765 &"
 
   {
+    action:     "published"
     url:        $url
     sha256:     $sha256
     size_bytes: $size

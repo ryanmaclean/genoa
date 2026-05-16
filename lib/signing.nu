@@ -70,8 +70,20 @@ def "main sign" [
 def "main verify-image" [
   image_path: string
   --profile: string = "uefi"
+  --dry-run                    # dry-run: return planned checks without mounting image
 ] {
   let platform = try { ^uname -s | str trim } catch { "unknown" }
+
+  if $dry_run {
+    return ({
+      action:     "verify-image"
+      image_path: $image_path
+      profile:    $profile
+      dry_run:    true
+      planned_checks: ["loader_conf_present" "loader_conf_vfs_root" "rc_conf_present" "rc_conf_sshd_enable" "agent_dir_present"]
+      note:       "dry-run: would mount image and check these files"
+    } | to json --indent 2)
+  }
 
   if $platform != "FreeBSD" {
     return ({action: "verify-image" image_path: $image_path profile: $profile

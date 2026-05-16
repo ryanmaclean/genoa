@@ -173,7 +173,16 @@ def "main notify" [receipt_file: string, --dry-run] {
   }
 }
 
-def "main status" [--dir: string = "./out"] {
+def "main status" [--dir: string = "./out", --dry-run] {
+  if $dry_run {
+    return ({
+      action:   "status"
+      dry_run:  true
+      note:     "dry-run: would query platform, artifacts, Vultr snapshots, and Vultr instances"
+      planned_checks: ["platform" "genoa_version" "build_ready" "recent_builds" "snapshots" "instances"]
+    } | to json --indent 2)
+  }
+
   # Derive genoa_version from artifacts/ directory (latest vN.N.N dir)
   let genoa_version = try {
     let art_dirs = (glob "artifacts/v*" | where { |d| ($d | path type) == "dir" } | each { |d| $d | path basename } | sort --reverse)

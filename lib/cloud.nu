@@ -145,7 +145,22 @@ def "main watch" [
   --timeout: int = 300          # max seconds to wait (default 5 min)
   --interval: int = 15          # poll interval in seconds
   --provider: string = "vultr"
+  --dry-run                     # dry-run: return poll plan without calling Vultr
 ] {
+  if $dry_run {
+    return ({
+      action:      "watch"
+      resource_id: $resource_id
+      type:        $type
+      until:       $until
+      timeout:     $timeout
+      interval:    $interval
+      provider:    $provider
+      dry_run:     true
+      note:        $"dry-run: would poll ($provider) ($type) ($resource_id) every ($interval)s until status=($until) or timeout ($timeout)s"
+    } | to json --indent 2)
+  }
+
   let vultr = find_vultr
   if $vultr == null {
     return ({action: "failed", reason: "vultr CLI not found"} | to json --indent 2)
