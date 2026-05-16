@@ -1661,3 +1661,71 @@ def "main notify" [receipt_file: string, --dry-run] {
     {action: "failed" step: "pup_metrics_submit" stderr: ($result.stderr? | default "unknown error")} | to json --indent 2
   }
 }
+
+# ---------------------------------------------------------------------------
+# watch — poll snapshot or instance until target status is reached
+# ---------------------------------------------------------------------------
+def "main watch" [
+  resource_id: string           # Vultr snapshot ID or instance ID
+  --type: string = "snapshot"   # "snapshot" | "instance"
+  --until: string = "complete"  # target status ("complete", "active", "running")
+  --timeout: int = 300          # max seconds to wait (default 5 min)
+  --interval: int = 15          # poll interval in seconds
+  --provider: string = "vultr"
+] {
+  let vultr = find_vultr
+  if $vultr == null {
+    return ({action: "failed", reason: "vultr CLI not found"} | to json --indent 2)
+  }
+
+  let started = (date now | into int)
+  mut polls = 0
+  mut current_status = "unknown"
+  mut reached = false
+
+  loop {
+    $polls = $polls + 1
+    let now = (date now | into int)
+    let elapsed = ($now - $started) / 1_000_000_000  # nanoseconds to seconds
+
+    # Poll the resource
+    $current_status = if $type == "snapshot" {
+      try {
+        let s = (^$vultr snapshot get $resource_id --output json | from json)
+        $s.snapshot?.status? | default "unknown"
+      } catch { "error" }
+    } else {
+      try {
+        let i = (^$vultr instance get $resource_id --output json | from json)
+        $i.instance?.power_status? | default "unknown"
+      } catch { "error" }
+    }
+
+    print -e $"  [($polls)] ($resource_id | str substring 0..8)... status=($current_status) elapsed=($elapsed)s"
+
+    if $current_status == $until {
+      $reached = true
+      break
+    }
+
+    if $elapsed >= $timeout {
+      break
+    }
+
+    ^sleep ($interval | into string)
+  }
+
+  let total_elapsed = ((date now | into int) - $started) / 1_000_000_000
+
+  {
+    action:          "watch"
+    resource_id:     $resource_id
+    type:            $type
+    final_status:    $current_status
+    reached_target:  $reached
+    target:          $until
+    polls:           $polls
+    elapsed_seconds: $total_elapsed
+    timed_out:       (not $reached)
+  } | to json --indent 2
+}

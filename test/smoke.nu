@@ -604,6 +604,24 @@ provider = \"vultr\"
     $"profile=($profile) steps=($step_count)"
   })
 
+  # watch_snapshot_dry — timeout path: timed_out==true, action=="watch" (completes in ~1s)
+  (run_test "watch_snapshot_dry" {
+    let rec = (^nu genoa.nu watch "fake-id-0000" --until "complete" --timeout 1 --interval 1 | from json)
+    let action = ($rec | get action)
+    if $action != "watch" {
+      error make {msg: $"expected action=watch got ($action)"}
+    }
+    let timed_out = ($rec | get timed_out)
+    if $timed_out != true {
+      error make {msg: $"expected timed_out=true for a fake resource, got ($timed_out)"}
+    }
+    let resource_id = ($rec | get resource_id)
+    if $resource_id != "fake-id-0000" {
+      error make {msg: $"expected resource_id=fake-id-0000, got ($resource_id)"}
+    }
+    $"action=($action) timed_out=($timed_out) resource_id=($resource_id)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------
