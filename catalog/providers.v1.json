@@ -132,6 +132,36 @@
       "notes": "Power Systems (ppc64le) available via IBM Power Virtual Server - separate product. Classic Infrastructure (non-VPC) has different image requirements. No native BSD support in stock catalog."
     },
     {
+      "id": "aws_ec2",
+      "display_name": "Amazon EC2",
+      "deployment_path": "ami-import",
+      "byoi_support": "api",
+      "byoi_format": ["raw", "vmdk", "vhd"],
+      "min_image_size_mb": 1024,
+      "max_image_size_mb": 16384,
+      "notes": "Import via VM Import/Export service (vmimport IAM role required). Raw disk images supported. Upload to S3 first, then aws ec2 import-snapshot.",
+      "regions": ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"],
+      "arch_support": ["amd64", "aarch64"],
+      "interface": "ena0",
+      "freebsd_support": "community",
+      "docs": "https://docs.aws.amazon.com/vm-import/latest/userguide/vmimport-image-import.html"
+    },
+    {
+      "id": "gce_gcp",
+      "display_name": "Google Compute Engine",
+      "deployment_path": "custom-image",
+      "byoi_support": "api",
+      "byoi_format": ["raw"],
+      "min_image_size_mb": 2048,
+      "max_image_size_mb": 65536,
+      "notes": "Upload raw disk image as .tar.gz to GCS bucket, then gcloud compute images create. Image file inside tar must be named 'disk.raw'. kboot profile preferred for GCE ARM64.",
+      "regions": ["us-central1", "us-east1", "europe-west1", "asia-east1"],
+      "arch_support": ["amd64", "aarch64"],
+      "interface": "ens4",
+      "freebsd_support": "experimental",
+      "docs": "https://cloud.google.com/compute/docs/import/import-existing-image"
+    },
+    {
       "id": "vultr",
       "display_name": "Vultr Cloud Compute",
       "byoi_support": "api",

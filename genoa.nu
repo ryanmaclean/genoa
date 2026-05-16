@@ -3,6 +3,8 @@ source profiles/uefi.nu
 source profiles/kboot.nu
 source adapters/linode.nu
 source adapters/vultr.nu
+source adapters/aws.nu
+source adapters/gce.nu
 
 def "main catalog" [] {
   open "catalog/providers.v1.json" | to json --indent 2
@@ -492,7 +494,8 @@ def "main validate" [manifest_file: string] {
   # 13. image_size_minimum — size_mb must be >= 512
   let size_mb = ($m.image?.size_mb? | default 0)
   let size_ok = $size_mb >= 512
-  $checks = ($checks | append {check: "image_size_minimum", pass: $size_ok, detail: $"($size_mb) MB (min 512)"})
+  let size_detail = $"($size_mb) MB \(min 512\)"
+  $checks = ($checks | append {check: "image_size_minimum", pass: $size_ok, detail: $size_detail})
   if not $size_ok { $errors = ($errors | append $"image_size_minimum: ($size_mb) MB is below minimum 512 MB") }
 
   # 14. agent_sha256_not_placeholder — warn (not error) if sha256 is all-zeros or all-ones when source is url or gitea_release
@@ -515,33 +518,31 @@ def "main validate" [manifest_file: string] {
   let provider_for_iface = ($m.deploy?.provider? | default "")
   let iface_result = if $provider_for_iface == "vultr" {
     if ($iface | str starts-with "vtnet") {
-      {pass: true, detail: $"interface=($iface) (vultr: vtnet* ok)"}
+      {pass: true, detail: $"interface=($iface) \(vultr: vtnet* ok\)"}
     } else {
       {pass: false, detail: $"interface=($iface) does not match vtnet* for vultr"}
     }
   } else if $provider_for_iface == "linode_akamai" {
     if ($iface | str starts-with "eth") {
-      {pass: true, detail: $"interface=($iface) (linode_akamai: eth* ok)"}
-    } else if ($iface | str starts-with "vtnet") or ($iface | str starts-with "eth") {
-      {pass: true, detail: $"interface=($iface) (generic — not provider-validated)"}
+      {pass: true, detail: $"interface=($iface) \(linode_akamai: eth* ok\)"}
     } else {
-      {pass: true, detail: $"interface=($iface) (generic — not provider-validated)"}
+      {pass: true, detail: $"interface=($iface) \(generic — not provider-validated\)"}
     }
   } else if $provider_for_iface == "aws_ec2" {
     if ($iface | str starts-with "ena") or ($iface | str starts-with "eth") {
-      {pass: true, detail: $"interface=($iface) (aws_ec2: ena*/eth* ok)"}
+      {pass: true, detail: $"interface=($iface) \(aws_ec2: ena*/eth* ok\)"}
     } else {
       {pass: false, detail: $"interface=($iface) does not match ena*/eth* for aws_ec2"}
     }
   } else if $provider_for_iface == "gce_gcp" {
     if ($iface | str starts-with "gve") or $iface == "ens4" {
-      {pass: true, detail: $"interface=($iface) (gce_gcp: gve*/ens4 ok)"}
+      {pass: true, detail: $"interface=($iface) \(gce_gcp: gve*/ens4 ok\)"}
     } else {
       {pass: false, detail: $"interface=($iface) does not match gve*/ens4 for gce_gcp"}
     }
   } else {
-    # Unknown provider or no provider — generic pass if vtnet* or eth*
-    {pass: true, detail: $"interface=($iface) (generic — not provider-validated)"}
+    # Unknown provider or no provider — generic pass
+    {pass: true, detail: $"interface=($iface) \(generic — not provider-validated\)"}
   }
   $checks = ($checks | append ({check: "network_interface_valid"} | merge $iface_result))
   if not $iface_result.pass { $errors = ($errors | append $"network_interface_valid: ($iface_result.detail)") }
@@ -577,7 +578,7 @@ def "main validate" [manifest_file: string] {
     if not $bh_ok { $warnings = ($warnings | append $"build_host_format: '($bh)' does not match expected pattern — expected user@host or user@host:port") }
   }
 
-  # 14. signing_keys_present (warn only — signing is optional)
+  # 19. signing_keys_present (warn only — signing is optional)
   let sign_tool = ($m.signing?.tool? | default "none")
   if $sign_tool == "signify" {
     let sign_key = ($m.signing?.key_file? | default "")

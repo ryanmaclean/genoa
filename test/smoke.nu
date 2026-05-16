@@ -292,6 +292,20 @@ let tests = [
     $"signing.action=($action) signing.tool=($tool)"
   })
 
+  # validate_aws_manifest — valid == true and provider_in_catalog check passes
+  (run_test "validate_aws_manifest" {
+    let rec = (genoa "main validate 'examples/freebsd-aws-ec2-amd64.toml'")
+    let val = ($rec | get valid)
+    if $val != true {
+      error make {msg: $"expected valid=true got ($val); errors: ($rec | get errors | to json)"}
+    }
+    let catalog_check = ($rec | get checks | where check == "provider_in_catalog" | first)
+    if $catalog_check.pass != true {
+      error make {msg: $"expected provider_in_catalog check to pass, detail: ($catalog_check.detail)"}
+    }
+    $"valid=($val) provider_in_catalog=($catalog_check.pass)"
+  })
+
   # health — returns valid JSON with ok field and checks list containing all required tools
   (run_test "health" {
     let rec = (genoa "main health")

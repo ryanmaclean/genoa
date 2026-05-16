@@ -1,0 +1,44 @@
+schema_version = "v1"
+profile = "uefi"
+
+[image]
+name = "smolbsd-gce-amd64"
+version = "v0.1.0"
+format = "raw"
+size_mb = 2048
+description = "Minimal FreeBSD 15 UEFI for GCE amd64 via custom image import"
+
+[target]
+os = "freebsd"
+os_version = "15.0-RELEASE"
+arch = "amd64"
+platform = "generic"
+
+[kernel]
+config = "GENERIC"
+strip_debug = true
+
+[agent]
+name = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type = "url"
+url = "https://github.com/ryanmaclean/ii-agent/releases/download/v0.1.0/ii-agent-freebsd-amd64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[agent.rc_service]
+enabled = true
+name = "ii_agent"
+
+[network]
+interface = "ens4"
+mode = "dhcp"
+hostname = "smolbsd-gce"
+
+[deploy]
+provider = "gce_gcp"
+region = "us-central1"
+
+[metadata]
+builder_notes = "Raw disk image for GCE. Package as disk.raw inside a .tar.gz, upload to GCS, then gcloud compute images create."

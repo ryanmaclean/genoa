@@ -1,0 +1,44 @@
+schema_version = "v1"
+profile = "uefi"
+
+[image]
+name = "smolbsd-aws-ec2-amd64"
+version = "v0.1.0"
+format = "raw"
+size_mb = 2048
+description = "Minimal FreeBSD 15 UEFI for AWS EC2 amd64 via VM Import"
+
+[target]
+os = "freebsd"
+os_version = "15.0-RELEASE"
+arch = "amd64"
+platform = "generic"
+
+[kernel]
+config = "GENERIC"
+strip_debug = true
+
+[agent]
+name = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type = "url"
+url = "https://github.com/ryanmaclean/ii-agent/releases/download/v0.1.0/ii-agent-freebsd-amd64"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[agent.rc_service]
+enabled = true
+name = "ii_agent"
+
+[network]
+interface = "ena0"
+mode = "dhcp"
+hostname = "smolbsd-aws"
+
+[deploy]
+provider = "aws_ec2"
+region = "us-east-1"
+
+[metadata]
+builder_notes = "Raw disk image for AWS VM Import/Export. Upload to S3 then import-snapshot."
