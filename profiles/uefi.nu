@@ -299,10 +299,32 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         return {action: "build-failed", failed_step: $step7.label, exit_code: $step7.exit_code, detail: $step7}
     }
 
+    # ── step 7b: fetch_tarballs (cross-arch only) ───────────────────────────
+    # For aarch64 builds on an amd64 host, /usr/freebsd-dist/ has amd64 tarballs.
+    # Download arm64 tarballs to /tmp before extraction.
+    let mirror_base = $"https://download.freebsd.org/releases/($os_arch)/($os_version)"
+    let base_txz   = if $arch == "aarch64" { $"/tmp/freebsd-($os_arch)-($os_version)-base.txz" } else { "/usr/freebsd-dist/base.txz" }
+    let kernel_txz = if $arch == "aarch64" { $"/tmp/freebsd-($os_arch)-($os_version)-kernel.txz" } else { "/usr/freebsd-dist/kernel.txz" }
+    let step7b = if $arch != "aarch64" {
+        {step: "7b" label: "fetch_tarballs" action: "skipped" note: "amd64 uses /usr/freebsd-dist/ directly"}
+    } else {
+        run_step {
+            step: "7b"
+            label: "fetch_tarballs"
+            action: "would-run"
+            cmd: $"fetch -o ($base_txz) ($mirror_base)/base.txz && fetch -o ($kernel_txz) ($mirror_base)/kernel.txz"
+            description: $"Download FreeBSD ($os_version) ($os_arch) tarballs for cross-arch build"
+            note: "Required for aarch64 builds on amd64 buildworld"
+        } $dry_run
+    }
+    if $step7b.action == "failed" {
+        return {action: "build-failed", failed_step: $step7b.label, exit_code: $step7b.exit_code, detail: $step7b}
+    }
+
     # ── step 8: extract_base ────────────────────────────────────────────────
     let step8_cmds = [
         $"mount ($md_dev)p2 /mnt/rootfs"
-        $"tar -xf /usr/freebsd-dist/base.txz -C /mnt/rootfs"
+        $"tar -xf ($base_txz) -C /mnt/rootfs"
     ]
     let step8 = run_step {
         step: 8
@@ -310,7 +332,8 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         action: "would-run"
         cmd: ($step8_cmds | str join " && ")
         cmds: $step8_cmds
-        description: $"Extract FreeBSD ($os_version) base.txz to mounted rootfs."
+        description: $"Extract FreeBSD ($os_version) ($os_arch) base.txz to mounted rootfs."
+        base_txz: $base_txz
     } $dry_run
     if $step8.action == "failed" {
         return {action: "build-failed", failed_step: $step8.label, exit_code: $step8.exit_code, detail: $step8}
@@ -321,8 +344,9 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
         step: 9
         label: "extract_kernel"
         action: "would-run"
-        cmd: $"tar -xf /usr/freebsd-dist/kernel.txz -C /mnt/rootfs"
-        description: $"Extract FreeBSD ($os_version) kernel.txz to mounted rootfs."
+        cmd: $"tar -xf ($kernel_txz) -C /mnt/rootfs"
+        description: $"Extract FreeBSD ($os_version) ($os_arch) kernel.txz to mounted rootfs."
+        kernel_txz: $kernel_txz
     } $dry_run
     if $step9.action == "failed" {
         return {action: "build-failed", failed_step: $step9.label, exit_code: $step9.exit_code, detail: $step9}
@@ -550,6 +574,9 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
             # ── 7. format_rootfs ─────────────────────────────────────────────
             $step7
+
+            # ── 7b. fetch_tarballs (cross-arch only) ─────────────────────────
+            $step7b
 
             # ── 8. extract_base ──────────────────────────────────────────────
             $step8
