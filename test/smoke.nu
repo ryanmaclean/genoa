@@ -642,6 +642,26 @@ provider = \"vultr\"
     $"action=($action) source_id=($source_id)"
   })
 
+  # suggest_dry_run — --dry-run returns action="suggest", dry_run=true, prompt_preview and ollama_url present
+  (run_test "suggest_dry_run" {
+    let rec = (^nu genoa.nu suggest "minimal freebsd for vultr" --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "suggest" {
+      error make {msg: $"expected action=suggest, got ($action)"}
+    }
+    let dry_run = ($rec | get dry_run? | default false)
+    if $dry_run != true {
+      error make {msg: $"expected dry_run=true, got ($dry_run)"}
+    }
+    if "prompt_preview" not-in $rec {
+      error make {msg: "expected prompt_preview field in dry-run output"}
+    }
+    if "ollama_url" not-in $rec {
+      error make {msg: "expected ollama_url field in dry-run output"}
+    }
+    $"action=($action) dry_run=($dry_run)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

@@ -414,10 +414,13 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     }
 
     # ── step 12: inject_agent ───────────────────────────────────────────────
+    # For Nu-script agents (e.g. ii-agent) the binary lands as <name>.nu so
+    # the rc.d wrapper can invoke: /usr/local/bin/nu /usr/local/bin/<name>.nu
+    let agent_dest = if $agent_name == "ii-agent" { $"($agent_name).nu" } else { $agent_name }
     let step12_cmds = if ($agent_name | is-empty) { [] } else { [
         "mkdir -p /mnt/rootfs/usr/local/bin /mnt/rootfs/usr/local/etc/rc.d"
-        $"cp ./out/($agent_name) /mnt/rootfs/usr/local/bin/($agent_name)"
-        $"chmod 755 /mnt/rootfs/usr/local/bin/($agent_name)"
+        $"cp ./out/($agent_name) /mnt/rootfs/usr/local/bin/($agent_dest)"
+        $"chmod 755 /mnt/rootfs/usr/local/bin/($agent_dest)"
         $"cp ./rc.d/($agent_name) /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
         $"chmod 755 /mnt/rootfs/usr/local/etc/rc.d/($agent_name)"
     ]}

@@ -44,7 +44,8 @@ name = "ii_agent"
 interface = "vtnet0"
 mode = "dhcp"
 hostname = "smolbsd-linode"
-ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGj/fYoxznT1tJ1QYTFqYsSHQ92N0GRspeUZUllkWr1A studio@mbp-m1.local"]
+# Replace with your SSH public key from: cat ~/.ssh/id_ed25519.pub
+ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAEXAMPLEKEYREPLACEWITHYOUROWN user@host"]
 
 
 [deploy]

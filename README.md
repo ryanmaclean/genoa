@@ -27,29 +27,56 @@ nu genoa.nu health
 
 ## Commands
 
+### Discovery & Introspection
+
 | Command | Description |
 |---------|-------------|
 | `catalog` | Dump full provider catalog as JSON |
 | `schema` | Dump the manifest JSON schema |
 | `describe` | Summarize manifest fields (image, target, agent, network) |
-| `validate` | Validate a manifest against schema (17 checks) |
+| `providers` | Query provider catalog (filterable by `--id`) |
+| `versions` | List published Gitea releases via API |
+| `receipts` | List all receipts under `artifacts/` |
+
+### Validation & Build
+
+| Command | Description |
+|---------|-------------|
+| `validate` | Validate a manifest against schema (20 checks) |
 | `build` | Build a cloud image using uefi or kboot profile; writes receipt |
-| `deploy` | Deploy an image via the provider adapter (Vultr, Linode, OCI) |
-| `publish` | Upload image to a storage backend (r2, s3, gitea, local) |
-| `run` | Full pipeline: validate → build → publish → deploy |
 | `verify` | Verify a receipt file: image exists, SHA256 matches, claims pass |
-| `verify-image` | Inspect a raw disk image for partition layout correctness |
-| `status` | Scan output dir for receipts; report real vs dry-run builds |
-| `health` | Check all 10 required build tools and platform (FreeBSD expected) |
-| `selftest` | Run smoke suite as subprocess; returns structured pass/fail JSON |
-| `sign` | Sign an image with signify or minisign |
-| `diff` | Compare two receipt files; report changed fields |
-| `snapshots` | List Vultr snapshots via CLI |
+| `verify-image` | Mount image and check loader.conf/rc.conf present (FreeBSD only) |
+| `diff` | Compare two build receipts field by field |
+| `sign` | Sign an image with signify or minisign (`--dry-run` supported) |
+
+### Publishing & Deployment
+
+| Command | Description |
+|---------|-------------|
+| `publish` | Upload image to a storage backend (r2, s3, gitea, local) |
+| `deploy` | Deploy an image via the provider adapter (Vultr, Linode, OCI) |
+| `deploy-from-snapshot` | Launch a Vultr instance from an existing snapshot |
+| `clone-instance` | Clone a running Vultr instance |
+| `run` | Full pipeline: validate → build → publish → deploy (per-stage results) |
+
+### Snapshot & Instance Lifecycle
+
+| Command | Description |
+|---------|-------------|
+| `snapshots` | List Vultr snapshots |
 | `snapshot-import` | Import image to Vultr by URL |
 | `snapshot-status` | Poll status of a Vultr snapshot by ID |
-| `providers` | Query provider catalog (filterable by `--id`) |
-| `receipts` | List all receipts under `artifacts/` |
-| `notify` | Post build metrics to Datadog via `pup` |
+| `instances` | List running Vultr instances (`--all` for all regions) |
+| `watch` | Poll snapshot/instance until target status (with timeout) |
+
+### Observability & System
+
+| Command | Description |
+|---------|-------------|
+| `status` | Full system state: snapshots, instances, recent builds, platform |
+| `health` | Check all 10 required build tools and platform readiness |
+| `selftest` | Run smoke suite as subprocess; returns structured pass/fail JSON |
+| `notify` | Post enriched build metrics to Datadog (profile/host/os tags, age_hours) |
 
 ## Manifest format
 
@@ -134,6 +161,10 @@ For providers that accept raw disk images via URL import. Uses GPT + FAT16 ESP (
 
 For providers that require ext4 boot partitions (Linode, GCE). Uses GRUB2 + Linux mini-kernel + `loader.kboot`. Execution is gated on Linux — tools (`sgdisk`, loop devices, `bash`) are Linux-only. Currently generates dry-run plans only on non-Linux hosts.
 
+### NetBSD (`profiles/netbsd.nu`)
+
+Stub profile for NetBSD cloud image support. Returns a structured dry-run plan. Use with `examples/netbsd-vultr-amd64.toml`.
+
 ## Receipt schema
 
 Every build produces `<output_dir>/<name>-<version>.receipt.json`:
@@ -157,7 +188,7 @@ Verify a receipt: `nu genoa.nu verify out/smolbsd-v0.1.0.receipt.json`
 ## Development
 
 ```sh
-# Run smoke suite (32 tests)
+# Run smoke suite (41 tests)
 nu test/smoke.nu
 
 # Run full self-test (structured JSON output)
@@ -169,9 +200,10 @@ nu genoa.nu health
 
 ## Infrastructure
 
-- **Buildworld**: FreeBSD 15 amd64 on Vultr (2 vCPU, 4 GB RAM, 80 GB disk)
-- **Gitea**: `string/genoa` repo on fleet Gitea — releases published there
-- **CI**: GitHub Actions (smoke + validate-manifests) + Gitea Actions (FreeBSD native, pending Tailscale auth)
+- **Buildworld**: FreeBSD 15 amd64 on Vultr (2 vCPU, 4 GB RAM, 80 GB disk) — 2GB swap, rc.d HTTP service, SSH keepalive, Gitea act_runner registered
+- **Gitea**: `http://10.0.2.230:3001/string/genoa` — releases published there
+- **CI**: GitHub Actions (Nu 0.111.0 musl, smoke + validate-manifests) + Gitea Actions (FreeBSD native, pending Tailscale auth)
+- **Completions**: `completions/genoa.nu` — Nushell tab-completions for all subcommands
 
 ## License
 

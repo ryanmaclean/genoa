@@ -1,0 +1,14 @@
+# .gitleaks.toml — gitleaks configuration for the genoa repo
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Run: gitleaks detect --config .gitleaks.toml --source .
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+[allowlist]
+description = "genoa repo — intentional placeholder patterns"
+regexes = [
+  '''AAAAC3NzaC1lZDI1NTE5AAAAEXAMPLEKEY''',  # placeholder SSH public key in examples/
+  '''0{64}''',                                # all-zeros sha256 placeholder (agent not yet downloaded)
+  '''1{64}''',                                # all-ones sha256 placeholder (test fixture)
+  '''f{64}''',                                # all-F sha256 placeholder
+]
