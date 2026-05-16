@@ -872,34 +872,69 @@ def "main publish" [
 
 def "main run" [
   manifest_file: string
-  --provider: string = ""
-  --backend: string = "r2"
+  --profile: string = "uefi"
   --dry-run
+  --backend: string = "gitea"
+  --provider: string = ""
 ] {
-  # Step 0: validate — abort if manifest is invalid
-  let validate_result = main validate $manifest_file | from json
-  if not $validate_result.valid {
-    return ({action: "failed", step: "validate", errors: $validate_result.errors} | to json --indent 2)
+  # Resolve profile and provider from manifest if not specified via flags
+  let m = if ($manifest_file | path exists) { open $manifest_file } else { {} }
+  let p = if ($profile | is-not-empty) { $profile } else { $m.profile? | default "uefi" }
+  let prov = if ($provider | is-not-empty) { $provider } else { $m.deploy?.provider? | default "" }
+
+  # Helper: build the --dry-run flag list for subprocess calls
+  let dry_flags = if $dry_run { ["--dry-run"] } else { [] }
+
+  # Stage 1: validate — use subprocess so output is always clean JSON
+  let v_result = try {
+    ^nu genoa.nu validate $manifest_file | from json
+  } catch { |e|
+    {valid: false, errors: [$"validate subprocess failed: ($e.msg)"], warnings: [], action: "validate"}
   }
-  # 1. build (returns JSON string — parse for record access)
-  let build_result = (main build $manifest_file --dry-run=$dry_run | from json)
-  # 2. publish (uses receipt from build)
-  let receipt_path = ($build_result | get receipt_path? | default "")
+
+  if not ($v_result.valid? | default false) {
+    return ({
+      action:        "run"
+      manifest_path: $manifest_file
+      dry_run:       $dry_run
+      stages: {
+        validate: $v_result
+      }
+      ok:         false
+      stopped_at: "validate"
+    } | to json --indent 2)
+  }
+
+  # Stage 2: build
+  let b_result = try {
+    ^nu genoa.nu build $manifest_file --profile $p ...$dry_flags | from json
+  } catch { |e|
+    {action: "failed", error: $"build subprocess failed: ($e.msg)"}
+  }
+
+  # Stage 3: publish — resolve image path from receipt or fallback
+  let receipt_path = ($b_result.receipt_path? | default "")
   let image_path = if $receipt_path != "" and ($receipt_path | path exists) {
     let r = open $receipt_path
     $r.image?.output_path? | default ($r.image_path? | default "/tmp/genoa.raw")
   } else { "/tmp/genoa.raw" }
-  let pub_result = (main publish $image_path --backend $backend --dry-run=$dry_run | from json)
-  # Extract published URL from pub_result; synthesize a representative placeholder for dry-runs
-  let published_url = if ($pub_result.action? == "would-run") or ($pub_result.url? == null) or ($pub_result.url? == "") {
-    let m = open $manifest_file
+
+  let pub_result = try {
+    ^nu genoa.nu publish $image_path --backend $backend ...$dry_flags | from json
+  } catch { |e|
+    {action: "failed", error: $"publish subprocess failed: ($e.msg)", backend: $backend}
+  }
+
+  # Synthesize a published URL for downstream deploy stage
+  let published_url = if ($pub_result.action? == "would-run") or ($pub_result.url? | default "") == "" {
     let name    = $m.image?.name?    | default "image"
     let version = $m.image?.version? | default "v0.0.0"
     let fmt     = $m.image?.format?  | default "raw"
     $"https://example-bucket.example.com/($name)-($version).($fmt)"
   } else {
-    $pub_result.url
+    $pub_result.url? | default ""
   }
+
   # Write published info back into the receipt so downstream agents can locate the image URL
   if $receipt_path != "" and ($receipt_path | path exists) {
     let receipt = open $receipt_path
@@ -912,22 +947,37 @@ def "main run" [
     }
     $updated_receipt | to json | save --force $receipt_path
   }
-  # 3. deploy — pass published_url via --image so the Vultr adapter gets export_url
-  let dep_result = if $published_url != "" {
-    (main deploy $manifest_file --provider $provider --image $published_url --dry-run=$dry_run | from json)
-  } else {
-    (main deploy $manifest_file --provider $provider --dry-run=$dry_run | from json)
+
+  # Stage 4: deploy — pass published_url via --image so adapters get the export URL
+  let dep_result = try {
+    if $prov != "" {
+      ^nu genoa.nu deploy $manifest_file --provider $prov --image $published_url ...$dry_flags | from json
+    } else {
+      ^nu genoa.nu deploy $manifest_file --image $published_url ...$dry_flags | from json
+    }
+  } catch { |e|
+    {action: "failed", error: $"deploy subprocess failed: ($e.msg)", provider: $prov}
   }
-  # Return combined pipeline result with top-level convenience fields for agents
+
+  # Determine overall ok: all stages must not have action="failed"
+  let stage_failed = (
+    ($b_result.action?   | default "") == "failed" or
+    ($pub_result.action? | default "") == "failed" or
+    ($dep_result.action? | default "") == "failed"
+  )
+
   {
-    pipeline:      "validate->build->publish->deploy"
-    valid:         ($validate_result.valid? | default false)
-    receipt_path:  ($build_result.receipt_path? | default "")
-    image_path:    $image_path
-    published_url: $published_url
-    build:         $build_result
-    publish:       $pub_result
-    deploy:        $dep_result
+    action:        "run"
+    manifest_path: $manifest_file
+    dry_run:       $dry_run
+    stages: {
+      validate: $v_result
+      build:    $b_result
+      publish:  $pub_result
+      deploy:   $dep_result
+    }
+    ok:         (not $stage_failed)
+    stopped_at: null
   } | to json --indent 2
 }
 def "main health" [] {

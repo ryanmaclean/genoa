@@ -41,7 +41,7 @@ enabled = true
 name = "ii_agent"
 
 [network]
-interface = "vtnet0"
+interface = "eth0"
 mode = "dhcp"
 hostname = "smolbsd-linode"
 ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGj/fYoxznT1tJ1QYTFqYsSHQ92N0GRspeUZUllkWr1A studio@mbp-m1.local"]
