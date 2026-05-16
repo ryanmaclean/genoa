@@ -1327,10 +1327,114 @@ def "main diff" [
   } | to json --indent 2
 }
 
+def "main versions" [
+  --gitea-url: string = "http://10.0.2.230:3001"
+  --repo: string = "string/genoa"
+] {
+  let api_url = $"($gitea_url)/api/v1/repos/($repo)/releases"
+
+  let releases = try {
+    ^curl -sf $api_url | from json
+  } catch { |e|
+    return ({action: "failed", reason: $"Gitea API error: ($e.msg)", gitea_url: $gitea_url} | to json --indent 2)
+  }
+
+  let versions = ($releases | each { |r|
+    let assets = ($r.assets? | default [] | each { |a|
+      {
+        name:    ($a.name? | default "")
+        size_mb: (($a.size? | default 0) / 1048576 | math round --precision 1)
+        url:     ($a.browser_download_url? | default "")
+      }
+    })
+    {
+      tag:          ($r.tag_name? | default "")
+      name:         ($r.name? | default "")
+      published_at: ($r.published_at? | default "")
+      assets:       $assets
+    }
+  })
+
+  {
+    action:    "versions"
+    gitea_url: $gitea_url
+    repo:      $repo
+    count:     ($versions | length)
+    versions:  $versions
+  } | to json --indent 2
+}
+
+def "main clone-instance" [
+  source_instance_id: string  # ID of existing Vultr instance to clone
+  --label: string = ""        # label for the new instance (default: "clone-<source_id_prefix>")
+  --region: string = ""       # region for new instance; uses source region if empty
+  --dry-run
+] {
+  let vultr = find_vultr
+  if $vultr == null {
+    return ({action: "failed", reason: "vultr CLI not found"} | to json --indent 2)
+  }
+
+  # Fetch source instance details
+  let source_raw = try {
+    ^$vultr instance get $source_instance_id --output json | from json
+  } catch { |e|
+    return ({
+      action: "failed"
+      reason: $"vultr instance get failed: ($e.msg)"
+      source_id: $source_instance_id
+      provider: "vultr"
+    } | to json --indent 2)
+  }
+
+  let source = ($source_raw.instance? | default {})
+  let plan       = ($source.plan?   | default "vc2-1c-1gb")
+  let src_region = ($source.region? | default "ewr")
+  let os_id      = ($source.os_id?  | default 0)
+  let eff_region = if $region != "" { $region } else { $src_region }
+  let eff_label  = if $label  != "" { $label  } else { $"clone-($source_instance_id | str substring 0..8)" }
+
+  if $dry_run {
+    return ({
+      action:    "would-run"
+      source_id: $source_instance_id
+      plan:      $plan
+      region:    $eff_region
+      os_id:     $os_id
+      label:     $eff_label
+      provider:  "vultr"
+    } | to json --indent 2)
+  }
+
+  let raw = try {
+    ^$vultr instance create --plan $plan --region $eff_region --os $os_id --label $eff_label --output json | from json
+  } catch { |e|
+    return ({
+      action:    "failed"
+      reason:    $"vultr instance create failed: ($e.msg)"
+      source_id: $source_instance_id
+      provider:  "vultr"
+    } | to json --indent 2)
+  }
+
+  let inst = ($raw.instance? | default {})
+  {
+    action:      "clone-instance"
+    source_id:   $source_instance_id
+    instance_id: ($inst.id?       | default "")
+    ip:          ($inst.main_ip?  | default "")
+    status:      ($inst.status?   | default "")
+    plan:        $plan
+    region:      $eff_region
+    label:       $eff_label
+    provider:    "vultr"
+  } | to json --indent 2
+}
+
 def main [] {
   print "genoa — generated OS for AI assistants"
   print ""
-  print "Commands: catalog  schema  describe  validate  build  deploy  deploy-from-snapshot  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status  providers  receipts  instances"
+  print "Commands: catalog  schema  describe  validate  build  deploy  deploy-from-snapshot  publish  sign  verify  verify-image  run  status  health  selftest  diff  snapshots  snapshot-import  snapshot-status  providers  receipts  instances  versions  clone-instance"
   print "Usage:    nu genoa.nu <command> [args]"
   print "Example:  nu genoa.nu catalog | jq '.providers[0]'"
 }

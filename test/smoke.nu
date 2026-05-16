@@ -622,6 +622,17 @@ provider = \"vultr\"
     $"action=($action) timed_out=($timed_out) resource_id=($resource_id)"
   })
 
+  # versions_gitea — action=="versions" or "failed" (Gitea may not be reachable from all environments)
+  (run_test "versions_gitea" {
+    let rec = (^nu genoa.nu versions | from json)
+    let action = ($rec | get action)
+    # Accept both success and failure (Gitea may not be reachable from all environments)
+    if $action != "versions" and $action != "failed" {
+      error make {msg: $"expected action=versions or failed, got ($action)"}
+    }
+    $"action=($action) count=($rec | get count? | default 0)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

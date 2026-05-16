@@ -99,6 +99,25 @@ export def vultr_deploy [
     return {action: "failed", reason: "vultr-cli not found — install: brew install vultr-cli", provider: "vultr"}
   }
 
+  # --- Pre-flight balance check ---
+  let account = try {
+    ^$vultr_cli account info --output json | from json
+  } catch { null }
+
+  if $account != null {
+    let balance = ($account.account?.balance? | default 0)
+    let pending = ($account.account?.pending_charges? | default 0)
+    if $balance == 0 and $pending > 0 {
+      return ({
+        action: "failed"
+        reason: $"Vultr account balance is $0 with \$($pending) pending charges — add payment method to continue"
+        balance: $balance
+        pending_charges: $pending
+        provider: "vultr"
+      } | to json --indent 2)
+    }
+  }
+
   # --- Image URL resolution ---
   let image_url = if ("image" in $manifest and "export_url" in $manifest.image) {
     $manifest.image.export_url
@@ -158,12 +177,46 @@ export def vultr_deploy [
   }
 
   # --- Step 3: Create instance from snapshot ---
-  let instance_result = try {
-    ^$vultr_cli instance create --region $region --plan $plan --snapshot $snap_id -o json | from json
+  let instance_raw = try {
+    ^$vultr_cli instance create --region $region --plan $plan --snapshot $snap_id -o json | complete
   } catch { |e|
     return {
       action: "failed"
       step: "create_instance"
+      error: $e.msg
+      snap_id: $snap_id
+      provider: "vultr"
+    }
+  }
+
+  if ($instance_raw.exit_code? | default 0) != 0 {
+    let stderr_out = ($instance_raw.stderr? | default "")
+    let stdout_out = ($instance_raw.stdout? | default "")
+    let combined   = $"($stderr_out) ($stdout_out)"
+    if ($combined | str contains "Unauthorized") or ($combined | str contains "500") {
+      return ({
+        action: "failed"
+        reason: "Vultr API error — check account balance (pending_charges may exceed balance)"
+        exit_code: 500
+        provider: "vultr"
+      } | to json --indent 2)
+    }
+    return {
+      action: "failed"
+      step: "create_instance"
+      exit_code: ($instance_raw.exit_code? | default -1)
+      error: $combined
+      snap_id: $snap_id
+      provider: "vultr"
+    }
+  }
+
+  let instance_result = try {
+    $instance_raw.stdout | from json
+  } catch { |e|
+    return {
+      action: "failed"
+      step: "create_instance_parse"
       error: $e.msg
       snap_id: $snap_id
       provider: "vultr"
