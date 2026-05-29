@@ -1,14 +1,5 @@
-# lib/cloud.nu — find_vultr helper + Vultr cloud ops subcommands
-# Sourced by genoa.nu. This module defines find_vultr which is used by
-# deploy.nu, system.nu, and cloud.nu itself — source order in genoa.nu matters.
-
-# Locate the vultr CLI binary: checks Homebrew path first, then PATH.
-def find_vultr [] {
-  let brew = "/opt/homebrew/bin/vultr"
-  if ($brew | path exists) { return $brew }
-  let in_path = (which vultr | get 0?.path? | default null)
-  $in_path
-}
+# lib/cloud.nu — Vultr cloud ops subcommands
+# Sourced by genoa.nu. find_vultr is now defined in lib/tools.nu (sourced first).
 
 def "main snapshots" [
   --provider: string = "vultr"

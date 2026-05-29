@@ -2,11 +2,7 @@
 # DigitalOcean custom-image deploy adapter
 # Path: import raw image from URL -> custom image -> droplet
 
-def find_doctl [] {
-  let brew = "/opt/homebrew/bin/doctl"
-  if ($brew | path exists) { return $brew }
-  (which doctl | get 0?.path? | default null)
-}
+def find_doctl [] { find_bin "doctl" }
 
 export def digitalocean_deploy [
   manifest: record

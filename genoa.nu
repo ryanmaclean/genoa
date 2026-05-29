@@ -1,5 +1,7 @@
 #!/usr/bin/env nu
 # genoa — AX-first FreeBSD/NetBSD cloud image CLI. Nu 0.111.0+. All output: JSON.
+# lib/tools.nu must be sourced first — it exports find_bin/find_vultr used by adapters and lib/
+source lib/tools.nu
 source profiles/uefi.nu
 source profiles/kboot.nu
 source profiles/netbsd.nu
@@ -9,7 +11,7 @@ source adapters/aws.nu
 source adapters/gce.nu
 source adapters/digitalocean.nu
 
-# lib/ modules — source order matters: cloud.nu defines find_vultr used by deploy.nu and system.nu
+# lib/ modules — source order matters: cloud.nu defines Vultr ops; find_vultr now in lib/tools.nu
 source lib/cloud.nu
 source lib/validate.nu
 source lib/build.nu
