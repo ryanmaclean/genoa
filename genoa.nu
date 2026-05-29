@@ -7,6 +7,7 @@ source adapters/linode.nu
 source adapters/vultr.nu
 source adapters/aws.nu
 source adapters/gce.nu
+source adapters/digitalocean.nu
 
 # lib/ modules — source order matters: cloud.nu defines find_vultr used by deploy.nu and system.nu
 source lib/cloud.nu

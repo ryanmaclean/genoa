@@ -54,6 +54,8 @@ def "main deploy" [
     linode_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else if $path == "snapshot-url" {
     vultr_deploy  $m $image --dry-run=$dry_run | to json --indent 2
+  } else if $pid == "digitalocean" {
+    digitalocean_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else {
     # OCI adapter has a top-level `source formats/convert.nu` which leaks a closure
     # when oci.nu is sourced inside an if/else branch. Invoke as subprocess to avoid

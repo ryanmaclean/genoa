@@ -186,14 +186,15 @@
       "byoi_format": [
         "raw",
         "qcow2",
-        "vhdx",
-        "vdi",
         "vmdk"
       ],
       "architectures_supported": [
         "amd64"
       ],
       "deployment_path": "byoi-api",
+      "freebsd_support": "community",
+      "regions": ["nyc1", "nyc3", "sfo3", "ams3", "sgp1", "lon1", "fra1", "tor1", "blr1"],
+      "docs": "https://docs.digitalocean.com/products/images/custom-images/",
       "notes": "CRITICAL: FreeBSD dropped from stock images July 2022. Must use custom image path. No aarch64 for custom images. Requires bsd-cloudinit for FreeBSD custom images. Max 100 GB uncompressed."
     },
     {

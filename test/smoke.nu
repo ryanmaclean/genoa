@@ -662,6 +662,30 @@ provider = \"vultr\"
     $"action=($action) dry_run=($dry_run)"
   })
 
+  # digitalocean_deploy_dry — deploy --dry-run returns action="would-run" and provider="digitalocean"
+  (run_test "digitalocean_deploy_dry" {
+    let rec = (^nu genoa.nu deploy examples/freebsd-digitalocean-amd64.toml --dry-run | from json)
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run got ($action)"}
+    }
+    let provider = ($rec | get provider)
+    if $provider != "digitalocean" {
+      error make {msg: $"expected provider=digitalocean got ($provider)"}
+    }
+    $"action=($action) provider=($provider)"
+  })
+
+  # validate_digitalocean — validate manifest returns valid=true
+  (run_test "validate_digitalocean" {
+    let rec = (genoa "main validate 'examples/freebsd-digitalocean-amd64.toml'")
+    let val = ($rec | get valid)
+    if $val != true {
+      error make {msg: $"expected valid=true got ($val); errors: ($rec | get errors | to json)"}
+    }
+    $val
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

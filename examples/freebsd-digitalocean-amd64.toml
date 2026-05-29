@@ -1,0 +1,57 @@
+schema_version = "v1"
+
+[image]
+name = "smolbsd-digitalocean-amd64"
+version = "v0.1.0"
+format = "raw"
+size_mb = 4096
+description = "Minimal FreeBSD for DigitalOcean via custom-image import"
+
+[target]
+os = "freebsd"
+os_version = "15.0-RELEASE"
+arch = "amd64"
+platform = "generic"
+
+[kernel]
+config = "GENERIC"
+strip_debug = true
+
+[packages]
+include = [
+  "FreeBSD-runtime",
+  "FreeBSD-clibs",
+  "FreeBSD-rc",
+  "FreeBSD-utilities",
+  "FreeBSD-pkg-bootstrap"
+]
+
+[agent]
+name = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type = "url"
+url = "https://gitea.local:3000/ii/ii-agent/releases/download/v0.1.0-freebsd-amd64/ii-agent"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[agent.rc_service]
+enabled = true
+name = "ii_agent"
+
+[network]
+interface = "vtnet0"  # DigitalOcean uses VirtIO network (vtnet0 on FreeBSD)
+mode = "dhcp"
+hostname = "smolbsd-do"
+# ssh_keys = ["ssh-ed25519 AAAA... your-key-here"]  # add your DO SSH key fingerprint or full key
+
+profile = "uefi"
+
+[deploy]
+provider = "digitalocean"
+region = "nyc3"
+size = "s-1vcpu-1gb"
+
+[metadata]
+builder_notes = "Raw disk image for DigitalOcean custom-image URL import. Compress with gzip before hosting."
+target_region = "nyc3"

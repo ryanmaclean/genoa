@@ -81,7 +81,7 @@ nu genoa.nu validate your-agent.toml
 Passing output shape (JSON):
 ```json
 {
-  "action": "validated",
+  "action": "validate",
   "manifest_path": "your-agent.toml",
   "valid": true,
   "checks": [...],
@@ -90,14 +90,16 @@ Passing output shape (JSON):
 }
 ```
 
-A passing run has `"valid": true` and `"errors": []`. Warnings do not block
-the build but should be resolved before production. Common warnings:
+A passing run has `"valid": true` and `"errors": []`. The `checks` array
+contains one record per validation check with `check`, `pass`, and `detail`
+fields — useful for seeing which checks ran. Warnings do not block the build
+but should be resolved before production. Common warnings:
 - `sha256 is all-zeros` — replace with real digest
 - `image.format not accepted by provider` — check `catalog/providers.v1.json`
   `.byoi_format` for your `deploy.provider`
 
-On validation failure, `"valid": false` and `"errors"` contains an array of
-strings describing what failed. Fix all errors before proceeding.
+On validation failure, `"valid": false` and `"errors"` is an array of plain
+strings, one per failed check. Fix all errors before proceeding.
 
 ---
 
@@ -107,17 +109,22 @@ strings describing what failed. Fix all errors before proceeding.
 nu genoa.nu build your-agent.toml --dry-run
 ```
 
-Prints a 16-step plan without executing any build steps. The plan is returned
-as a record with a `steps` array; each element has:
+Produces a 16-step plan without executing any build steps. The plan is returned
+as a JSON object with a `steps` array; each element has:
 ```json
 { "step": 3, "label": "create_disk_image", "action": "would-run", "description": "...", "cmd": "..." }
 ```
 
-Review steps to confirm:
-- Step 2 (`resolve_artifacts`) shows the correct agent URL or path
-- Step 10 (`configure_loader`) lists your boot options rendered correctly
-- Step 12 (`inject_agent`) names the correct agent binary and rc.d service
-- Step 15 (`umount_and_compact`) is present before the receipt is emitted
+Step numbers and labels from `profiles/uefi.nu`:
+- Step 2 (`resolve_artifacts`) — shows the resolved agent URL or local path
+- Step 10 (`render_loader_conf`) — shows boot options rendered into `loader.conf`
+- Step 11 (`render_rc_conf`) — shows the rc.conf snippet for your service
+- Step 12 (`inject_agent`) — copies the agent binary and rc.d script into rootfs
+- Step 15 (`umount_and_compact`) — unmounts rootfs and syncs image
+
+All destructive steps carry `"action": "would-run"` on a dry run and are not
+executed. Steps with `"action": "real"` run unconditionally (they only read or
+plan, never mutate system state).
 
 If any step detail looks wrong, fix the manifest and re-validate before
 running a real build.
@@ -138,8 +145,9 @@ set `target.build_host` in your manifest to an SSH-reachable FreeBSD machine:
 build_host = "builder@fb-vm-24:2225"
 ```
 
-genoa will SSH in, transfer the manifest, run the build remotely, and pull
-the finished image and receipt back to `[image].output_dir` (default: `./out`).
+genoa will SSH in, SCP the manifest to `/tmp/genoa-remote-<name>.toml`, run
+the build remotely via `nu ~/genoa/genoa.nu build`, then SCP the finished
+image and receipt back to the local `image.output_dir` (default: `./out`).
 
 On success the command exits 0 and writes two files:
 ```
@@ -147,9 +155,11 @@ out/your-agent-freebsd-amd64-v0.1.0.raw
 out/your-agent-freebsd-amd64-v0.1.0.receipt.json
 ```
 
-The receipt is a JSON provenance envelope with `sha256`, `build_host`,
-`timestamp`, `manifest_hash`, and `agent.source` fields. Keep it — the
-deploy step reads it automatically.
+The receipt (`schema_version: "v1"`) is a JSON provenance envelope containing
+`image`, `build`, `agent`, `hashes`, `signing`, and `claims` objects. The
+`hashes.image_sha256` and `hashes.manifest_sha256` fields carry the
+SHA-256 digests. Keep the receipt — the deploy step uses it to locate the
+image when `--from-receipt` is passed.
 
 ---
 
@@ -159,17 +169,21 @@ deploy step reads it automatically.
 nu genoa.nu deploy your-agent.toml
 ```
 
-genoa reads the receipt from `[image].output_dir` automatically — no path
-argument needed. It looks up `[deploy].provider` in `catalog/providers.v1.json`
-to determine the upload strategy (`snapshot-url` for Vultr, `byoi-api` for
-others) and dispatches accordingly.
+genoa resolves the image path in this order: `--image <path>` flag →
+`--from-receipt <receipt.json>` flag → manifest `image.output_dir` +
+`image.name` + `image.version` + `image.format` → fallback `/tmp/genoa.raw`.
+Most callers rely on the manifest-derived path (same formula as build output).
+
+genoa looks up `[deploy].provider` in `catalog/providers.v1.json` to
+determine the upload strategy (`snapshot-url` for Vultr, `rescue-dd` for
+Linode, `byoi-api` for OCI-compatible providers) and dispatches accordingly.
 
 Provider credentials are read from environment variables. For Vultr:
 ```
 VULTR_API_KEY=<your-key> nu genoa.nu deploy your-agent.toml
 ```
 
-On success the command returns a JSON object:
+On success the Vultr adapter returns:
 ```json
 {
   "action": "deployed",
@@ -182,6 +196,8 @@ On success the command returns a JSON object:
   "image_url": "https://..."
 }
 ```
+
+Other provider adapters return similar structures with adapter-specific fields.
 
 ---
 
