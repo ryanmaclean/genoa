@@ -232,7 +232,24 @@ let tests = [
     if not (($rec.stages?.build? | default null) != null) {
       error make {msg: "expected stages.build to be a record, got null/missing"}
     }
-    $"action=($rec.action) ok=($rec.ok) stopped_at=($rec.stopped_at | default 'null')"
+    if ($rec.stages?.sign? | default null) == null {
+      error make {msg: "expected stages.sign to be a record, got null/missing"}
+    }
+    $"action=($rec.action) ok=($rec.ok) sign=($rec.stages.sign.action) stopped_at=($rec.stopped_at | default 'null')"
+  })
+
+  # run_pipeline_sign_stage — sign stage action="unsigned" when manifest has no signing.tool
+  (run_test "run_pipeline_sign_stage" {
+    let rec = (^nu genoa.nu run examples/freebsd-vultr-aarch64.toml --dry-run | from json)
+    let sign_action = ($rec.stages?.sign?.action? | default "missing")
+    if $sign_action != "unsigned" {
+      error make {msg: $"expected stages.sign.action=unsigned (no signing.tool in manifest), got ($sign_action)"}
+    }
+    let sign_tool = ($rec.stages?.sign?.tool? | default "missing")
+    if $sign_tool != "none" {
+      error make {msg: $"expected stages.sign.tool=none, got ($sign_tool)"}
+    }
+    $"stages.sign.action=($sign_action) stages.sign.tool=($sign_tool)"
   })
 
   # status_check — status returns action=status with platform and build_ready fields

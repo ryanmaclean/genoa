@@ -207,15 +207,24 @@ Other provider adapters return similar structures with adapter-specific fields.
 nu genoa.nu run your-agent.toml
 ```
 
-Chains validate → build → publish → deploy in a single command. Aborts on the
-first failure and prints the step that failed as a JSON error object. Equivalent to:
+Chains validate → build → publish → deploy in a single command. Aborts at
+the first failure and returns a JSON object with `ok: false` and
+`stopped_at: "<stage>"` identifying where the pipeline halted. On full
+success returns `ok: true` with `stages` containing each stage result.
+Equivalent to running:
 
 ```
 nu genoa.nu validate your-agent.toml &&
 nu genoa.nu build   your-agent.toml &&
-nu genoa.nu publish your-agent.toml &&
+nu genoa.nu publish <image-path>    &&
 nu genoa.nu deploy  your-agent.toml
 ```
 
 Use `run` in CI pipelines where you want a single exit code. Use the
 individual commands when debugging a specific stage.
+
+**Note on agent binary:** ii-agent is installed as a portable `/bin/sh`
+script at `/usr/local/bin/ii-agent` inside the image. The build step
+copies the file from `./out/<agent_name>` verbatim and sets `chmod 755` —
+no compilation or interpreter-specific suffix is added. The rc.d service
+script is copied from `./rc.d/<agent_name>`.

@@ -185,13 +185,26 @@ def "main run" [
     {action: "failed", error: $"build subprocess failed: ($e.msg)"}
   }
 
-  # Stage 3: publish — resolve image path from receipt or fallback
+  # Resolve image path from receipt (needed by sign and publish)
   let receipt_path = ($b_result.receipt_path? | default "")
   let image_path = if $receipt_path != "" and ($receipt_path | path exists) {
     let r = open $receipt_path
     $r.image?.output_path? | default ($r.image_path? | default "/tmp/genoa.raw")
   } else { "/tmp/genoa.raw" }
 
+  # Stage 2b: sign (only if manifest requests signing)
+  let signing_tool = $m.signing?.tool? | default "none"
+  let sign_result = if $signing_tool == "none" {
+    {action: "unsigned", tool: "none"}
+  } else {
+    try {
+      ^nu genoa.nu sign $image_path --manifest $manifest_file ...$dry_flags | from json
+    } catch { |e|
+      {action: "failed", error: $"sign subprocess failed: ($e.msg)", tool: $signing_tool}
+    }
+  }
+
+  # Stage 3: publish
   let pub_result = try {
     ^nu genoa.nu publish $image_path --backend $backend ...$dry_flags | from json
   } catch { |e|
@@ -234,9 +247,10 @@ def "main run" [
 
   # Determine overall ok: all stages must not have action="failed"
   let stage_failed = (
-    ($b_result.action?   | default "") == "failed" or
-    ($pub_result.action? | default "") == "failed" or
-    ($dep_result.action? | default "") == "failed"
+    ($b_result.action?    | default "") == "failed" or
+    ($sign_result.action? | default "") == "failed" or
+    ($pub_result.action?  | default "") == "failed" or
+    ($dep_result.action?  | default "") == "failed"
   )
 
   {
@@ -246,6 +260,7 @@ def "main run" [
     stages: {
       validate: $v_result
       build:    $b_result
+      sign:     $sign_result
       publish:  $pub_result
       deploy:   $dep_result
     }

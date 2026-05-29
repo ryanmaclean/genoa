@@ -8,7 +8,7 @@
 
 **B1 — `linode.nu` is unreachable from any real manifest**
 
-`genoa.nu` dispatch (`main deploy`, lines 144–151) routes to `adapters/linode.nu` only when a provider's `deployment_path` equals `"rescue-dd"`. No entry in `catalog/providers.v1.json` has `deployment_path: "rescue-dd"`. The `linode_akamai` entry (line 179 of the catalog) has `deployment_path: "byoi-api"`, which routes to `adapters/oci.nu`. A user who sets `provider = "linode_akamai"` in their manifest gets the OCI adapter, not the Linode rescue+dd adapter. The Linode adapter is dead code unless a provider entry is fixed to carry `"rescue-dd"`.
+`lib/deploy.nu` dispatch (`main deploy`) routes to `adapters/linode.nu` only when a provider's `deployment_path` equals `"rescue-dd"`. No entry in `catalog/providers.v1.json` has `deployment_path: "rescue-dd"`. The `linode_akamai` entry (line 179 of the catalog) has `deployment_path: "byoi-api"`, which routes to `adapters/oci.nu`. A user who sets `provider = "linode_akamai"` in their manifest gets the OCI adapter, not the Linode rescue+dd adapter. The Linode adapter is dead code unless a provider entry is fixed to carry `"rescue-dd"`.
 
 **B2 — `freebsd-vultr-aarch64.toml` fails its own validation**
 
@@ -22,13 +22,21 @@
 
 `profiles/kboot.nu` line 169 includes `make menuconfig` in the kernel build command. `menuconfig` opens a terminal UI and blocks forever unless a TTY is present. A non-dry-run kboot build on FreeBSD would stall permanently at this step.
 
-**B5 — Receipt written by `genoa.nu build` fails its own schema**
+**B5 — ~~Receipt written by `genoa.nu build` fails its own schema~~ RESOLVED**
 
-`schema/receipt.v1.json` (line 8) requires `schema_version` = `"v1"` (const), plus top-level objects `image`, `build`, `agent`, `hashes`, and `claims`. `genoa.nu` (lines 108–119) writes a flat receipt with `schema_version: "1"` (not `"v1"`), `image_path`, `image_sha256`, `manifest_sha256`, `profile`, and `dry_run`. The `build`, `agent`, `hashes`, and `claims` objects are entirely absent. Any downstream consumer validating receipts against `receipt.v1.json` will reject every receipt this tool produces.
+This blocker is resolved in the lib/ refactor. `lib/build.nu` now writes a
+schema-conformant receipt with `schema_version: "v1"` and the required top-level
+objects `image`, `build`, `agent`, `hashes`, `signing`, and `claims`. The receipt
+also populates `claims` with verifiable probe/expect pairs for fleet-eval integration.
+The old monolithic `genoa.nu` receipt writer has been replaced.
 
-**B6 — `run` does not chain `validate → build → deploy`**
+**B6 — ~~`run` does not chain `validate → build → deploy`~~ PARTIALLY RESOLVED**
 
-`docs/agent-port-quickstart.md` lines 189–194 state that `genoa run` is "equivalent to: `validate && build && deploy`". `genoa.nu` lines 563–522 show `main run` does: `build → publish → deploy`. There is no call to `main validate`. A user relying on `run` to catch manifest errors before building will get no such protection.
+`main run` in `genoa.nu` now chains `validate → build → publish → deploy` as
+four stages, each run via subprocess. The validate stage runs first and aborts
+the pipeline on failure. `docs/agent-port-quickstart.md` has been updated to
+reflect the correct four-stage chain. The `README.md` description (out of scope
+for this doc pass) still requires a separate update.
 
 ---
 
@@ -48,31 +56,42 @@
 
 **I4 — `main describe` documented as performing schema validation; it does not**
 
-`README.md` line 27: "`describe` parses the manifest, validates against schema, prints a plan JSON with build steps." `genoa.nu` lines 11–27 show `main describe` opens the file, reads a handful of fields with `| default`, and returns a flat record. No validation occurs. No build steps are returned. The output is a five-field summary, not a plan.
+`README.md` line 27: "`describe` parses the manifest, validates against schema, prints a plan JSON with build steps." `genoa.nu` `main describe` opens the file, reads a handful of fields with `| default`, and returns a flat record. No validation occurs. No build steps are returned. The output is a five-field summary, not a plan.
 
-**I5 — `agent-port-quickstart.md` dry-run output shape is fiction**
+**I5 — ~~`agent-port-quickstart.md` dry-run output shape is fiction~~ RESOLVED**
 
-`docs/agent-port-quickstart.md` lines 113–118 show the dry-run step format as:
-```json
-{ "step": 1, "action": "fetch_agent_binary", "status": "pending", "detail": "..." }
-```
-The actual output (`profiles/uefi.nu`) uses `label` not a step named `fetch_agent_binary`, has `action: "would-run"` not `"status": "pending"`, and uses `description` not `detail`. Step labels named in the quickstart (`fetch_agent_binary`, `kernel_config`, `install_rc_service`, `sign_image`) do not appear in `profiles/uefi.nu`.
+`docs/agent-port-quickstart.md` has been updated. The correct step shape is
+`{ "step": N, "label": "...", "action": "would-run", "description": "...", "cmd": "..." }`
+matching `profiles/uefi.nu`. The step labels in the doc now match the actual
+labels used in the profile (`resolve_artifacts`, `render_loader_conf`, `inject_agent`,
+`umount_and_compact`).
 
-**I6 — `agent-port-quickstart.md` validate output shape is wrong**
+**I6 — ~~`agent-port-quickstart.md` validate output shape is wrong~~ RESOLVED**
 
-Lines 82–89 show validate returning `{"valid", "manifest", "schema_version", "warnings", "errors"}`. Actual output from `genoa.nu main validate` (lines 315–322) is `{"action", "manifest_path", "valid", "checks", "errors", "warnings"}`. Key names `"manifest"` and `"schema_version"` do not exist in actual output; `"checks"` and `"action"` are not mentioned in the docs. The `errors` value is described as "array of objects with `field` and `message` keys" — it is actually an array of plain strings.
+`docs/agent-port-quickstart.md` has been updated. The correct output shape
+(`lib/validate.nu`) is `{"action", "manifest_path", "valid", "checks", "errors", "warnings"}`.
+`action` is `"validate"` (not `"validated"`). `errors` is an array of plain strings.
+`checks` is documented as an array of per-check records.
 
-**I7 — `agent-port-quickstart.md` deploy output shape is wrong**
+**I7 — ~~`agent-port-quickstart.md` deploy output shape is wrong~~ RESOLVED**
 
-Lines 171–178 show deploy returning `{"provider", "image_id", "status", "receipt"}`. `adapters/vultr.nu` (lines 174–183) returns `{"action", "provider", "snapshot_id", "instance_id", "instance_ip", "region", "plan", "image_url"}`. There is no `image_id`, no `status: "active"`, and no `receipt` field.
+`docs/agent-port-quickstart.md` has been updated with the correct Vultr adapter
+output shape: `{"action", "provider", "snapshot_id", "instance_id", "instance_ip",
+"region", "plan", "image_url"}`. The stale `image_id`, `status`, and `receipt` keys
+have been removed.
 
-**I8 — `agent-port-quickstart.md` says `deploy` reads receipt automatically**
+**I8 — ~~`agent-port-quickstart.md` says `deploy` reads receipt automatically~~ RESOLVED**
 
-Line 161: "genoa reads the receipt from `[image].output_dir` automatically — no path argument needed." `genoa.nu main deploy` (lines 126–177) resolves the image path in order: `--image` flag, `--from-receipt` flag, `manifest.image.output_path`, default `/tmp/genoa.raw`. It does not scan `output_dir`. The `output_dir` schema field is never read by any code in the repository.
+`docs/agent-port-quickstart.md` has been updated. The correct resolution order
+(`lib/deploy.nu`) is: `--image` flag → `--from-receipt` flag → manifest-derived
+path (`output_dir/name-version.format`) → fallback `/tmp/genoa.raw`. The claim
+that `output_dir` is scanned automatically has been removed.
 
-**I9 — `run` is documented without `publish`**
+**I9 — ~~`run` is documented without `publish`~~ PARTIALLY RESOLVED**
 
-`README.md` line 45 says "`run` is the end-to-end pipeline: build → publish → deploy" and `agent-port-quickstart.md` line 189 says it chains `validate → build → deploy` with no mention of publish. These two docs contradict each other about what `run` does, and both are wrong in different ways (the README omits validate; the quickstart omits publish).
+`docs/agent-port-quickstart.md` has been updated to document the correct
+four-stage chain: `validate → build → publish → deploy`. `README.md` still
+requires a separate update (out of scope for this doc pass).
 
 **I10 — `linode_akamai` catalog entry: `deployment_path: "byoi-api"` and notes contradict each other**
 
@@ -90,13 +109,22 @@ The notes say "Only ext3/ext4 accepted - rules out UFS and ZFS natively." But `d
 
 ## Dead weight
 
-**D1 — Legacy bare `def` block (genoa.nu lines 534–544)**
+**D1 — Legacy bare `def` block in `genoa.nu`**
 
-The file ends with bare `def build`, `def deploy`, `def catalog`, `def schema`, `def describe`, and `def verify` that duplicate or stub the `main *` commands. The comment says "keep for source-import compatibility" but there are no other files that `source genoa.nu` and call the bare forms. `adapters/oci.nu` sources `formats/convert.nu`. No adapter sources `genoa.nu`. The bare stubs shadow the actual implementations if this file is ever sourced, and `def build` is a stub that returns a static record rather than calling `main build`.
+`genoa.nu` ends with bare `def build`, `def deploy`, `def catalog`, `def schema`,
+`def describe`, and `def verify` that duplicate or stub the `main *` commands.
+The comment says "keep for source-import compatibility" but no other file sources
+`genoa.nu` and calls the bare forms. The actual implementations have moved to
+`lib/build.nu`, `lib/deploy.nu`, etc. The bare stubs shadow the lib/ implementations
+if this file is ever sourced, and `def build` is a stub that returns a static
+record rather than delegating to `lib/build.nu`.
 
-**D2 — `emit_receipt` in `profiles/uefi.nu` is computed but discarded**
+**D2 — ~~`emit_receipt` in `profiles/uefi.nu` is computed but discarded~~ RESOLVED**
 
-`uefi_build` calls `emit_receipt` (line 368) and includes it in the steps array as step 16. But `genoa.nu main build` (lines 108–123) discards this receipt entirely and writes its own receipt using a different, non-conforming structure. The `emit_receipt` function in `uefi.nu` does real work (hashing on FreeBSD) that is thrown away.
+This is resolved in the lib/ refactor. `lib/build.nu` `main build` now writes the
+authoritative schema-conformant receipt. The `emit_receipt` step in `profiles/uefi.nu`
+is no longer the primary receipt writer — `lib/build.nu` performs all receipt
+construction after the profile returns its build plan.
 
 **D3 — `formats/convert.nu` exports `convert_to_vhd`, `convert_to_vmdk`, `convert_to_gcstar` — none are called**
 
@@ -110,21 +138,35 @@ Defined in `schema/manifest.v1.json` lines 43–47, present in `examples/agent-p
 
 ## Promise gaps
 
-**P1 — Signing is entirely unimplemented**
+**P1 — ~~Signing is entirely unimplemented~~ RESOLVED**
 
-`schema/manifest.v1.json` defines a full `signing` object (lines 308–329) with `tool`, `key_file`, `public_key_file`. `schema/receipt.v1.json` defines a `signing` section (lines 154–168). `agent-port-template.toml` mentions signing in comments. No code in `genoa.nu`, `profiles/uefi.nu`, or any adapter reads or acts on any signing field. Images are always unsigned regardless of manifest content.
+`lib/build.nu` now reads the `signing` section from the manifest. When
+`signing.tool = "signify"`, it locates the `signify` or `signify-ossl` binary,
+runs `signify -S -s <key_file> -m <image>`, and records the result in the
+receipt's `signing` field. `lib/signing.nu` provides standalone `main sign`
+and `main verify-image` subcommands for direct invocation. Images built with
+`signing.tool = "none"` (the default) remain unsigned.
 
-**P2 — `claims` array in receipts is never populated**
+**P2 — ~~`claims` array in receipts is never populated~~ RESOLVED**
 
-`schema/receipt.v1.json` requires a `claims` array (line 8), each element with `claim`, `probe`, `expect`, `status` for fleet-eval integration. README line 116 says "every build emits a receipt with... Verifiable claims array for fleet-eval integration." Neither `genoa.nu` nor `profiles/uefi.nu` writes a `claims` field into any receipt.
+`lib/build.nu` now writes a `claims` array in every receipt. Each entry has
+`claim`, `executor`, `probe`, `expect`, and `status` fields for fleet-eval
+integration. Five claims are emitted per build: image SHA-256, manifest SHA-256,
+agent name, image format, and target OS.
 
-**P3 — `build` object in receipts is never populated**
+**P3 — ~~`build` object in receipts is never populated~~ RESOLVED**
 
-`schema/receipt.v1.json` requires a `build` object with `host`, `builder_type`, `os_version`, `arch`, `genoa_version`. No receipt-writing code produces this object. Build provenance (who ran the build, on what machine) is promised by the schema and README but not delivered.
+`lib/build.nu` now writes a `build` object with `host` (from `uname -n`),
+`builder_type` (`"dry-run"`, `"genoa-local"`, or `"genoa-crosshost"`),
+`os_version`, `arch`, `genoa_version`, `profile`, and `dry_run` fields.
 
-**P4 — Remote build does not pull artifact back**
+**P4 — ~~Remote build does not pull artifact back~~ RESOLVED**
 
-`README.md` line 79: "genoa will SSH in, transfer the manifest, run the build remotely, and pull the finished image and receipt back to `[image].output_dir`." `genoa.nu` lines 62–79 SCP the manifest to the remote host and SSH to run the build. The result is the JSON output from the remote `genoa build` call. No SCP retrieval of the image or receipt file occurs. The image stays on the remote host.
+`lib/build.nu` now SCPs both the image and receipt back from the remote host
+after the SSH build completes. The remote image path is extracted from the
+remote build JSON result (`image.output_path`); the receipt path is inferred
+from the image path by substituting the extension with `.receipt.json`. Both
+files are fetched to the local `image.output_dir` via `scp -P <port>`.
 
 **P5 — kboot profile is amd64-only despite FreeBSD kboot supporting aarch64**
 
@@ -148,11 +190,14 @@ Line 15: `let m = open $manifest_file`. Line 87: `let manifest_content = open $m
 
 **PO3 — `kboot_build` returns a JSON string; `uefi_build` returns a record**
 
-`profiles/kboot.nu` line 388: `$plan | to json`. `profiles/uefi.nu` line 470 returns a record directly. `genoa.nu` lines 101–105 handle this asymmetry with a `try { from json }` wrapper. This is a smell: two implementations of the same interface with different return types, requiring a special-case workaround in the caller.
+`profiles/kboot.nu` ends with `$plan | to json`. `profiles/uefi.nu` returns a
+record directly. `lib/build.nu` handles this asymmetry with a `try { from json }`
+wrapper. This is a smell: two implementations of the same interface with different
+return types, requiring a special-case workaround in the caller.
 
 **PO4 — `all-zeros` SHA256 check is too narrow**
 
-`genoa.nu` lines 289–290: checks if sha256 is all `"0"` characters. `examples/freebsd-linode-amd64.toml` uses `sha256 = "111...1"` — 64 ones — which is equally fake but passes the check without warning. The validation gives false confidence.
+`lib/validate.nu`: checks if sha256 is all `"0"` characters. `examples/freebsd-linode-amd64.toml` uses `sha256 = "111...1"` — 64 ones — which is equally fake but passes the check without warning. The validation gives false confidence.
 
 **PO5 — `main describe` help text in `README.md` is inflated**
 
@@ -160,11 +205,14 @@ Line 27: "`describe` parses the manifest, validates against schema, prints a pla
 
 **PO6 — `status` command exists but is missing from `README.md` subcommand table**
 
-`genoa.nu` line 592 lists `status` in the help print. `README.md` lines 33–43 list all subcommands — `status` is absent. The `README.md` subcommand table at line 99 also omits it.
+`lib/system.nu` `main status` exists and is listed in the genoa.nu help output.
+`README.md` subcommand tables omit it. (README update is out of scope for this doc pass.)
 
 **PO7 — `genoa.nu` example in help text uses `jq` with wrong key path**
 
-Line 594: `nu genoa.nu catalog | jq '.[\"providers\"][0]'`. The catalog is a record, not an array. The correct jq path would be `.providers[0]`. The example would fail as written.
+`genoa.nu` help text: `nu genoa.nu catalog | jq '.[\"providers\"][0]'`. The catalog
+output is a record (not an array), so the correct jq path is `.providers[0]`. The
+example would fail as written.
 
 **PO8 — `formats/convert.nu` `convert_to_gcstar` uses `tar` as a Nushell built-in**
 
@@ -178,14 +226,24 @@ Line 6 of the JSON Schema document has `"schema_version": "2"` at the top level.
 
 ## What's actually working
 
+*Updated to reflect the lib/ refactor.*
+
 - **`genoa catalog`** — returns structured JSON from `catalog/providers.v1.json`. Parseable, machine-friendly, 40+ entries. Works.
 - **`genoa schema`** — returns `schema/manifest.v1.json`. Works.
-- **`genoa validate`** — runs 13 checks against a manifest and returns a structured result with `valid`, `checks`, `errors`, `warnings`. The checks themselves are sound (schema_version, required fields, slug format, format enum, arch enum, os enum, provider lookup, profile file exists, source type, sha256 placeholder, semver). Works on a non-FreeBSD host.
+- **`genoa providers`** — returns filtered provider list with arch support, formats, regions. New in lib/ refactor.
+- **`genoa validate`** (`lib/validate.nu`) — runs 13 checks; returns `action`, `manifest_path`, `valid`, `checks`, `errors`, `warnings`. Works on a non-FreeBSD host.
 - **`genoa describe`** — returns a basic summary record. Useful as a quick sanity check on field presence despite the inflated description.
-- **`genoa build --dry-run` (uefi)** — produces a correct 16-step plan with `action: "would-run"` on all destructive steps. Works on macOS/Linux for planning purposes.
-- **`genoa deploy --provider vultr --dry-run`** — returns a structured plan JSON with the three Vultr snapshot steps. Works.
-- **`genoa deploy --provider linode_akamai --dry-run`** — routes to OCI adapter (see B1), but the OCI dry-run also returns a valid plan. Accidentally works, wrong adapter.
-- **`genoa verify`** — checks image and receipt existence, parses SHA256s, handles dry-run receipts correctly. Works.
+- **`genoa build --dry-run` (uefi)** — produces a correct multi-step plan with `action: "would-run"` on all destructive steps. Works on macOS/Linux for planning purposes.
+- **`genoa build` (uefi, FreeBSD)** — now writes a schema-conformant receipt with `schema_version: "v1"`, `image`, `build`, `agent`, `hashes`, `signing`, `claims`. Remote build via `target.build_host` SCPs artifacts back.
+- **`genoa sign` / `genoa verify-image`** (`lib/signing.nu`) — standalone signing commands using signify/minisign. New in lib/ refactor.
+- **`genoa deploy --provider vultr --dry-run`** — returns a structured plan JSON. Works.
+- **`genoa deploy --provider linode_akamai --dry-run`** — routes to OCI adapter (see B1 — still a blocker). Accidentally returns a valid plan; wrong adapter.
+- **`genoa verify`** (`lib/validate.nu`) — checks image and receipt existence, parses SHA256s, handles dry-run receipts correctly. Works.
+- **`genoa health` / `genoa selftest` / `genoa notify` / `genoa status`** (`lib/system.nu`) — operational subcommands. New in lib/ refactor.
+- **`genoa snapshots` / `genoa snapshot-import` / `genoa snapshot-status` / `genoa instances` / `genoa watch` / `genoa versions`** (`lib/cloud.nu`) — cloud ops subcommands. New in lib/ refactor.
+- **`genoa receipts` / `genoa diff`** (`lib/artifacts.nu`) — receipt inventory and diffing. New in lib/ refactor.
+- **`genoa suggest`** (`lib/suggest.nu`) — AI-powered manifest generation via Ollama. New in lib/ refactor.
+- **`genoa run`** — now chains validate → build → publish → deploy as four subprocess stages. Aborts with `stopped_at` on first failure.
 - **`publish.nu`** — `publish_image` and `publish_catalog` are well-structured. R2, S3, Gitea, and local backends have correct tool-detection logic. Dry-run works. Live paths depend on external tools and credentials.
-- **Smoke tests** — the 16 tests in `test/smoke.nu` all exercise real code paths. They would catch regressions in catalog, schema, describe, validate, and build dry-run. However, `build_steps_kboot` (expects 20 steps) relies on `kboot_build` accepting `--profile kboot` override, and `validate_template` and `validate_vultr` pass against a validator that accepts `"iso"` even though the schema does not.
+- **Smoke tests** — the tests in `test/smoke.nu` exercise real code paths. They would catch regressions in catalog, schema, describe, validate, and build dry-run. However, `validate_template` and `validate_vultr` pass against a validator that accepts `"iso"` even though the schema does not.
 - **Template TOML** — `examples/agent-port-template.toml` is thorough and accurate as documentation, despite a few schema mismatches. It is the best-written file in the repository for a human reader.
