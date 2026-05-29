@@ -717,6 +717,20 @@ provider = \"vultr\"
     $val
   })
 
+  # gce_deploy_dry — deploy --dry-run for gce_gcp returns action="would-run" and provider="gce_gcp"
+  (run_test "gce_deploy_dry" {
+    let rec = (genoa "main deploy 'examples/freebsd-gce-amd64.toml' --dry-run")
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run got ($action)"}
+    }
+    let provider = ($rec | get provider)
+    if $provider != "gce_gcp" {
+      error make {msg: $"expected provider=gce_gcp got ($provider)"}
+    }
+    $"action=($action) provider=($provider)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ def "main deploy" [
     "snapshot-url" => "adapters/vultr.nu"
     "byoi-api"     => "adapters/oci.nu"
     "ami-import"   => "adapters/aws.nu"
+    "custom-image" => "adapters/gce.nu"
     _              => null
   }
   if $afile == null {
@@ -59,6 +60,8 @@ def "main deploy" [
     digitalocean_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else if $pid == "aws_ec2" {
     aws_deploy $m $image --dry-run=$dry_run | to json --indent 2
+  } else if $pid == "gce_gcp" {
+    gce_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else {
     # OCI adapter has a top-level `source formats/convert.nu` which leaks a closure
     # when oci.nu is sourced inside an if/else branch. Invoke as subprocess to avoid
