@@ -329,6 +329,20 @@ let tests = [
     $"valid=($val) provider_in_catalog=($catalog_check.pass)"
   })
 
+  # aws_deploy_dry — deploy --dry-run for aws_ec2 returns action="would-run" and provider="aws_ec2"
+  (run_test "aws_deploy_dry" {
+    let rec = (genoa "main deploy 'examples/freebsd-aws-ec2-amd64.toml' --dry-run")
+    let action = ($rec | get action)
+    if $action != "would-run" {
+      error make {msg: $"expected action=would-run got ($action)"}
+    }
+    let provider = ($rec | get provider)
+    if $provider != "aws_ec2" {
+      error make {msg: $"expected provider=aws_ec2 got ($provider)"}
+    }
+    $"action=($action) provider=($provider)"
+  })
+
   # validate_ssh_key_check — bad ssh key in network.ssh_keys causes valid=false
   (run_test "validate_ssh_key_check" {
     let tmp = (^mktemp -t genoa-test-XXXXXX | str trim) + ".toml"

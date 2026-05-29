@@ -25,6 +25,7 @@ def "main deploy" [
     "rescue-dd"    => "adapters/linode.nu"
     "snapshot-url" => "adapters/vultr.nu"
     "byoi-api"     => "adapters/oci.nu"
+    "ami-import"   => "adapters/aws.nu"
     _              => null
   }
   if $afile == null {
@@ -56,6 +57,8 @@ def "main deploy" [
     vultr_deploy  $m $image --dry-run=$dry_run | to json --indent 2
   } else if $pid == "digitalocean" {
     digitalocean_deploy $m $image --dry-run=$dry_run | to json --indent 2
+  } else if $pid == "aws_ec2" {
+    aws_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else {
     # OCI adapter has a top-level `source formats/convert.nu` which leaks a closure
     # when oci.nu is sourced inside an if/else branch. Invoke as subprocess to avoid
