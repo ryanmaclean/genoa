@@ -1,0 +1,50 @@
+schema_version = "v1"
+
+[image]
+name = "smolbsd-qemu-riscv64"
+version = "v0.1.0"
+format = "raw"
+size_mb = 4096
+description = "Minimal FreeBSD riscv64 for QEMU virt (OpenSBI + U-Boot)"
+
+[target]
+os = "freebsd"
+os_version = "15.0-RELEASE"
+arch = "riscv64"
+platform = "qemu-virt"
+
+[kernel]
+config = "GENERIC"
+strip_debug = true
+
+[packages]
+include = [
+  "FreeBSD-runtime",
+  "FreeBSD-clibs",
+  "FreeBSD-rc",
+  "FreeBSD-utilities",
+  "FreeBSD-pkg-bootstrap"
+]
+
+[agent]
+name = "ii-agent"
+version = "v0.1.0"
+
+[agent.source]
+type = "local_path"
+local_path = "/usr/local/bin/ii-agent"
+
+[agent.rc_service]
+enabled = true
+name = "ii_agent"
+
+[network]
+interface = "vtnet0"
+mode = "dhcp"
+hostname = "smolbsd-riscv64"
+
+profile = "uefi"
+
+[metadata]
+builder_notes = "QEMU virt boot: OpenSBI fw_jump.elf (-bios) + u-boot-qemu-riscv64 (-kernel). No cloud provider supports riscv64 compute as of 2026-06; local QEMU only. EFI fallback binary is BOOTRISCV64.EFI. Real SBCs (VisionFive2/JH7110, HiFive FU540/FU740) need board-specific upstream U-Boot + DTB and are out of scope for this manifest."
+target_region = "local-qemu"

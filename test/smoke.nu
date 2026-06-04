@@ -152,6 +152,44 @@ let tests = [
     $count
   })
 
+  # validate_riscv64 — new riscv64 manifest is valid (no deploy provider needed)
+  (run_test "validate_riscv64" {
+    let rec = (genoa "main validate 'examples/freebsd-qemu-riscv64.toml'")
+    let val = ($rec | get valid)
+    if $val != true {
+      error make {msg: $"expected valid=true got ($val); errors: ($rec | get errors | to json)"}
+    }
+    $val
+  })
+
+  # build_riscv64_efi — uefi dry-run for riscv64 uses BOOTRISCV64.EFI on the EFI loader steps
+  (run_test "build_riscv64_efi" {
+    let rec = (genoa "main build 'examples/freebsd-qemu-riscv64.toml' --dry-run")
+    let efi_steps = ($rec | get steps | where ($it.efi_binary? | default "" | is-not-empty))
+    let efis = ($efi_steps | get efi_binary | uniq)
+    if ($efis | length) != 1 or ($efis | first) != "BOOTRISCV64.EFI" {
+      error make {msg: $"expected efi_binary=BOOTRISCV64.EFI on all loader steps, got ($efis | to json)"}
+    }
+    ($efis | first)
+  })
+
+  # build_riscv64_fetch — riscv64 is cross-arch, so fetch_tarballs runs (action=would-run, not skipped)
+  (run_test "build_riscv64_fetch" {
+    let rec = (genoa "main build 'examples/freebsd-qemu-riscv64.toml' --dry-run")
+    let fetch = ($rec | get steps | where label == "fetch_tarballs" | first)
+    if ($fetch | is-empty) {
+      error make {msg: "expected a fetch_tarballs step in riscv64 build, found none"}
+    }
+    if $fetch.action != "would-run" {
+      error make {msg: $"expected fetch_tarballs action=would-run for cross-arch riscv64, got ($fetch.action)"}
+    }
+    # fetch URL must reference the riscv64 mirror leaf
+    if not ($fetch.cmd | str contains "/riscv64/") {
+      error make {msg: $"expected fetch cmd to reference riscv64 mirror, got ($fetch.cmd)"}
+    }
+    $fetch.action
+  })
+
   # build_steps_kboot — kboot dry-run has exactly 23 steps (+18a write_loader_kboot_conf, +18b write_rc_conf)
   (run_test "build_steps_kboot" {
     let rec = (genoa "main build 'examples/freebsd-linode-amd64.toml' --profile kboot --dry-run")

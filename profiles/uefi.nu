@@ -182,7 +182,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
     # Arch-dependent EFI filename
     let arch = $manifest | get target? | get arch? | default "amd64"
-    let efi_filename = if $arch == "aarch64" { "BOOTaa64.EFI" } else { "BOOTx64.EFI" }
+    let efi_filename = if $arch == "aarch64" { "BOOTaa64.EFI" } else if $arch == "riscv64" { "BOOTRISCV64.EFI" } else { "BOOTx64.EFI" }
 
     # Derived image fields
     let image_name    = $manifest | get image? | get name? | default "unknown"
@@ -195,7 +195,11 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     let hostname     = $manifest | get network? | get hostname? | default $image_name
     let agent_name   = $manifest | get agent? | get name? | default ""
     let os_version   = $manifest | get target? | get os_version? | default "15.0-RELEASE"
-    let os_arch      = if $arch == "aarch64" { "arm64" } else { $arch }
+    # os_arch is the FreeBSD mirror path leaf under /releases/. amd64→amd64,
+    # aarch64→arm64, riscv64→riscv64 (identity; the FreeBSD mirror serves
+    # riscv64 artifacts at /releases/riscv/riscv64/ but genoa's mirror_base
+    # uses the arch leaf, which resolves correctly for riscv64).
+    let os_arch      = if $arch == "aarch64" { "arm64" } else if $arch == "riscv64" { "riscv64" } else { $arch }
 
     # ── step 3: create_disk_image ───────────────────────────────────────────
     let step3 = run_step {
@@ -303,10 +307,10 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     # For aarch64 builds on an amd64 host, /usr/freebsd-dist/ has amd64 tarballs.
     # Download arm64 tarballs to /tmp before extraction.
     let mirror_base = $"https://download.freebsd.org/releases/($os_arch)/($os_version)"
-    let base_txz   = if $arch == "aarch64" { $"/tmp/freebsd-($os_arch)-($os_version)-base.txz" } else { "/usr/freebsd-dist/base.txz" }
-    let kernel_txz = if $arch == "aarch64" { $"/tmp/freebsd-($os_arch)-($os_version)-kernel.txz" } else { "/usr/freebsd-dist/kernel.txz" }
-    let step7b = if $arch != "aarch64" {
-        {step: "7b" label: "fetch_tarballs" action: "skipped" note: "amd64 uses /usr/freebsd-dist/ directly"}
+    let base_txz   = if $arch == "amd64" { "/usr/freebsd-dist/base.txz" }   else { $"/tmp/freebsd-($os_arch)-($os_version)-base.txz" }
+    let kernel_txz = if $arch == "amd64" { "/usr/freebsd-dist/kernel.txz" } else { $"/tmp/freebsd-($os_arch)-($os_version)-kernel.txz" }
+    let step7b = if $arch == "amd64" {
+        {step: "7b" label: "fetch_tarballs" action: "skipped" note: "amd64 native build uses /usr/freebsd-dist/ directly"}
     } else {
         run_step {
             step: "7b"
@@ -314,7 +318,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
             action: "would-run"
             cmd: $"fetch -o ($base_txz) ($mirror_base)/base.txz && fetch -o ($kernel_txz) ($mirror_base)/kernel.txz"
             description: $"Download FreeBSD ($os_version) ($os_arch) tarballs for cross-arch build"
-            note: "Required for aarch64 builds on amd64 buildworld"
+            note: "Required for cross-arch builds (aarch64, riscv64) on an amd64 buildworld"
         } $dry_run
     }
     if $step7b.action == "failed" {
