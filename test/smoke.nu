@@ -183,9 +183,10 @@ let tests = [
     if $fetch.action != "would-run" {
       error make {msg: $"expected fetch_tarballs action=would-run for cross-arch riscv64, got ($fetch.action)"}
     }
-    # fetch URL must reference the riscv64 mirror leaf
-    if not ($fetch.cmd | str contains "/riscv64/") {
-      error make {msg: $"expected fetch cmd to reference riscv64 mirror, got ($fetch.cmd)"}
+    # fetch URL must reference the FULL FreeBSD riscv mirror path: riscv/riscv64
+    # (NOT bare /riscv64/ — FreeBSD serves at /releases/riscv/riscv64/<ver>/)
+    if not ($fetch.cmd | str contains "/riscv/riscv64/") {
+      error make {msg: $"expected fetch cmd to reference /riscv/riscv64/ mirror path, got ($fetch.cmd)"}
     }
     $fetch.action
   })

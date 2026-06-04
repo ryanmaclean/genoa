@@ -1,4 +1,5 @@
 schema_version = "v1"
+profile = "uefi"
 
 [image]
 name = "smolbsd-qemu-riscv64"
@@ -42,8 +43,6 @@ name = "ii_agent"
 interface = "vtnet0"
 mode = "dhcp"
 hostname = "smolbsd-riscv64"
-
-profile = "uefi"
 
 [metadata]
 builder_notes = "QEMU virt boot: OpenSBI fw_jump.elf (-bios) + u-boot-qemu-riscv64 (-kernel). No cloud provider supports riscv64 compute as of 2026-06; local QEMU only. EFI fallback binary is BOOTRISCV64.EFI. Real SBCs (VisionFive2/JH7110, HiFive FU540/FU740) need board-specific upstream U-Boot + DTB and are out of scope for this manifest."

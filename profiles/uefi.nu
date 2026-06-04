@@ -195,11 +195,12 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     let hostname     = $manifest | get network? | get hostname? | default $image_name
     let agent_name   = $manifest | get agent? | get name? | default ""
     let os_version   = $manifest | get target? | get os_version? | default "15.0-RELEASE"
-    # os_arch is the FreeBSD mirror path leaf under /releases/. amd64→amd64,
-    # aarch64→arm64, riscv64→riscv64 (identity; the FreeBSD mirror serves
-    # riscv64 artifacts at /releases/riscv/riscv64/ but genoa's mirror_base
-    # uses the arch leaf, which resolves correctly for riscv64).
+    # os_arch is a short descriptive leaf used only for local temp filenames.
     let os_arch      = if $arch == "aarch64" { "arm64" } else if $arch == "riscv64" { "riscv64" } else { $arch }
+    # mirror_arch is the FreeBSD download layout path <arch>/<subarch> under
+    # /releases/. FreeBSD serves: amd64/amd64, arm64/aarch64, riscv/riscv64.
+    # This MUST include the subarch component or fetch 404s.
+    let mirror_arch  = if $arch == "aarch64" { "arm64/aarch64" } else if $arch == "riscv64" { "riscv/riscv64" } else { $"($arch)/($arch)" }
 
     # ── step 3: create_disk_image ───────────────────────────────────────────
     let step3 = run_step {
@@ -306,7 +307,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     # ── step 7b: fetch_tarballs (cross-arch only) ───────────────────────────
     # For aarch64 builds on an amd64 host, /usr/freebsd-dist/ has amd64 tarballs.
     # Download arm64 tarballs to /tmp before extraction.
-    let mirror_base = $"https://download.freebsd.org/releases/($os_arch)/($os_version)"
+    let mirror_base = $"https://download.freebsd.org/releases/($mirror_arch)/($os_version)"
     let base_txz   = if $arch == "amd64" { "/usr/freebsd-dist/base.txz" }   else { $"/tmp/freebsd-($os_arch)-($os_version)-base.txz" }
     let kernel_txz = if $arch == "amd64" { "/usr/freebsd-dist/kernel.txz" } else { $"/tmp/freebsd-($os_arch)-($os_version)-kernel.txz" }
     let step7b = if $arch == "amd64" {
