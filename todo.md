@@ -1,23 +1,38 @@
 # genoa — TODO
 
-Status as of 2026-05-16. genoa builds minimal FreeBSD/NetBSD cloud images with embedded agents and deploys to 40+ providers.
+Status as of 2026-06-04. genoa builds minimal FreeBSD/NetBSD cloud images with embedded agents and deploys to 40+ providers.
 
 ---
 
 ## ✅ Done (v0.1.3 → v0.1.4-dev milestone)
 
 - **Image boots** — verified in 2 environments: FreeBSD QEMU (buildworld, KVM, ~30s) and macOS QEMU (Apple Silicon TCG, 121s). EDK2 UEFI → `BOOTx64.EFI` → loader → kernel → login prompt. The `mountroot>` bug is gone (`vfs.root.mountfrom` resolves).
-- **42/42 smoke tests** green on macOS, FreeBSD buildworld, and GitHub Actions CI.
+- **50/50 smoke tests** green on macOS, FreeBSD buildworld, and GitHub Actions CI.
 - **CI green** — Smoke Tests + Validate Manifests, Nu 0.111.0 musl.
-- **26 subcommands** — validate, build, run, sign, verify-image, diff, publish, deploy, deploy-from-snapshot, clone-instance, snapshots, snapshot-import/-status, instances, watch, providers, receipts, versions, notify, status, health, selftest, suggest, catalog, schema, describe.
-- **genoa.nu refactored** — 1875 lines → 289-line shim + 8 `lib/` modules.
+- **29 subcommands** — validate, build, run, sign, verify-image, diff, publish, deploy, deploy-from-snapshot, clone-instance, snapshots, snapshot-import/-status, instances, watch, providers, receipts, versions, notify, status, health, selftest, suggest, catalog, schema, describe.
+- **genoa.nu refactored** — 1875 lines → ~290-line shim + 9 `lib/` modules (incl. lib/tools.nu `find_bin`).
 - **Validator** — 20 checks incl. JSON Schema Draft 7.
-- **Build profile (uefi.nu)** — writes loader.conf, rc.conf, fstab (9b/9c/9d); pkg install (11b); arm64 tarball fetch (7b).
+- **Build profile (uefi.nu)** — writes loader.conf, rc.conf, fstab (9b/9c/9d); pkg install (11b); cross-arch tarball fetch (7b) for aarch64 AND riscv64.
+- **3-arch UEFI** — amd64 (`BOOTx64.EFI`), aarch64 (`BOOTaa64.EFI`), riscv64 (`BOOTRISCV64.EFI`). FreeBSD mirror paths corrected: `amd64/amd64`, `arm64/aarch64`, `riscv/riscv64` (fixed a latent aarch64 path bug too).
 - **ii-agent v0.2.0** — portable `/bin/sh`, no Nu runtime dependency.
-- **Providers** — Vultr + Linode (real), AWS EC2 + GCE GCP (stubs), catalog of 40+.
+- **Providers** — Vultr, Linode, DigitalOcean, AWS EC2, GCE GCP all **real adapters** + OCI; catalog of 40+.
+- **`run` pipeline** — validate → build → sign → publish → deploy (sign skipped when signing.tool=none).
 - **Infra** — buildworld 2GB swap, rc.d HTTP image server, Gitea act_runner registered.
 - **Security** — personal SSH key scrubbed, `.gitleaks.toml`, `bin/pre-push-check.nu`.
-- **Docs** — README, CHANGELOG, CLAUDE.md, audit-2026-05-16.md.
+- **Docs** — README, CHANGELOG, CLAUDE.md, audit-2026-05-16.md, architecture.md, agent-port-quickstart.
+
+---
+
+## 🆕 RISC-V (new box arrived 2026-06-04)
+
+- ✅ **Build support done** — `examples/freebsd-qemu-riscv64.toml`, BOOTRISCV64.EFI, `riscv/riscv64` mirror, cross-arch fetch, 3 riscv smoke tests (validate + EFI binary + fetch path). Validated by dry-run + adversarial verify.
+- ⚠️ **CRITICAL caveat — genoa's UEFI profile assumes pure-UEFI boot, which RISC-V real hardware does NOT do yet.** FreeBSD riscv64 boots via **U-Boot + OpenSBI** (machine→supervisor mode handoff), not standalone loader.efi. The genoa image is valid for **QEMU virt only** right now:
+  `qemu-system-riscv64 -machine virt -bios .../opensbi/.../fw_jump.elf -kernel .../u-boot-qemu-riscv64/u-boot.bin -drive file=image.raw,...`
+- [ ] **Identify the box** — what board? (StarFive VisionFive2/JH7110, Milk-V Mars/Pioneer, SiFive HiFive FU540/FU740, other). This determines feasibility:
+  - VisionFive2: needs upstream U-Boot (ports U-Boot does NOT work) + DTB at `/dtb/jh7110-starfive-visionfive-2-v1.3b.dtb` on ESP + OpenSBI v1.7+ + SPI-flash boot mode.
+  - SiFive FU540/FU740: upstream U-Boot for the SoC + OpenSBI platform fw + DTB + SD ZSBL in magic GUID partition.
+- [ ] **riscv-sbc profile** (future) — a board-aware profile that lays down U-Boot/OpenSBI/DTB. Out of scope for the QEMU image; needs the board in hand.
+- [ ] **Add box to SSH config** — not currently in `~/.ssh/config` or `/etc/hosts`. Once reachable, run a real QEMU-or-hardware boot test.
 
 ---
 
