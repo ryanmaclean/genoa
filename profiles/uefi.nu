@@ -281,6 +281,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
     # ── step 6: install_efi_loader ──────────────────────────────────────────
     let step6_cmds = [
+        "mkdir -p /mnt/esp"
         $"mount -t msdosfs ($md_dev)p1 /mnt/esp"
         $"mkdir -p /mnt/esp/EFI/BOOT"
         $"cp /boot/loader.efi /mnt/esp/EFI/BOOT/($efi_filename)"
@@ -336,6 +337,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
 
     # ── step 8: extract_base ────────────────────────────────────────────────
     let step8_cmds = [
+        "mkdir -p /mnt/rootfs"
         $"mount ($md_dev)p2 /mnt/rootfs"
         $"tar -xf ($base_txz) -C /mnt/rootfs"
     ]
@@ -370,6 +372,7 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     # base.txz extracts /boot/loader.efi into the rootfs; this version
     # matches the kernel exactly and has no buildworld EFI device paths.
     let step8b_cmds = [
+        "mkdir -p /mnt/esp"
         $"mount -t msdosfs ($md_dev)p1 /mnt/esp"
         $"cp /mnt/rootfs/boot/loader.efi /mnt/esp/EFI/BOOT/($efi_filename)"
         "umount /mnt/esp"
