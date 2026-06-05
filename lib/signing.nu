@@ -88,6 +88,7 @@ def "main verify-image" [
       profile:    $profile
       dry_run:    true
       planned_checks: ["loader_conf_present" "loader_conf_vfs_root" "rc_conf_present" "rc_conf_sshd_enable" "agent_dir_present"]
+      checks:     ["loader_conf_present" "loader_conf_vfs_root" "rc_conf_present" "rc_conf_sshd_enable" "agent_dir_present"]
       note:       "dry-run: would mount image and check these files"
     } | to json --indent 2)
   }

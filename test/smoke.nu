@@ -791,6 +791,26 @@ provider = \"vultr\"
     $"ok=($ok)"
   })
 
+  # safety_guard_rejects_bad_os_version — build must fail-closed when
+  # target.os_version is malformed (CMD-INJ-005 field-specific format check).
+  (run_test "safety_guard_rejects_bad_os_version" {
+    let tmp = $"/tmp/genoa-badosver-(random uuid).toml"
+    let base = (open "examples/freebsd-vultr-aarch64.toml")
+    let bad = ($base | upsert target ($base.target | upsert os_version "15.0; touch /tmp/x"))
+    $bad | to toml | save --force $tmp
+    let rec = (genoa $"main build '($tmp)' --dry-run")
+    try { ^rm -f $tmp } catch { |e| null }
+    let action = ($rec | get action)
+    if $action != "failed" {
+      error make {msg: $"expected action=failed for bad os_version, got ($action)"}
+    }
+    let errs = ($rec | get errors | str join "; ")
+    if not ($errs | str contains "target.os_version invalid format") {
+      error make {msg: $"expected os_version format error, got: ($errs)"}
+    }
+    $"action=($action)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

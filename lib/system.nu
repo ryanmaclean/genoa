@@ -158,7 +158,9 @@ def "main notify" [receipt_file: string, --dry-run] {
     ^pup metrics submit --file $tmp | complete
   } catch { |e| {exit_code: -1 stderr: $e.msg} }
 
-  ^rm -f $tmp
+  # Capture the submission result first, then attempt cleanup. Wrap rm in
+  # try/catch so a cleanup failure can never mask the real submission outcome.
+  try { ^rm -f $tmp } catch { |e| null }
 
   if ($result.exit_code? | default 99) == 0 {
     {

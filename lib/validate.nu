@@ -54,6 +54,17 @@ export def manifest_safety_check [m: record] {
     }
   }
 
+  # target.os_version is interpolated into the FreeBSD mirror URL (uefi.nu
+  # mirror_base, step7b fetch). Transitively covered by the shell-meta checks,
+  # but enforce a strict release-version format so a malformed value fails fast.
+  # FreeBSD releases use N.N-RELEASE[-pN]; the format is OS-specific so scope
+  # the strict check to freebsd targets (NetBSD uses bare N.N versions).
+  let os_for_ver = ($m.target?.os? | default "freebsd")
+  let os_version = ($m.target?.os_version? | default "")
+  if $os_for_ver == "freebsd" and $os_version != "" and not ($os_version =~ '^[0-9]+\.[0-9]+-RELEASE(-p[0-9]+)?$') {
+    $errors = ($errors | append ("target.os_version invalid format: " + $os_version))
+  }
+
   # URL-bearing fields reach bash bootstrap templates (option-e-lsd). Reject
   # any shell metacharacter; permit only plain URL-safe characters.
   for field in [
