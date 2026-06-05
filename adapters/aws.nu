@@ -74,6 +74,12 @@ export def aws_deploy [
 
   let task_id = ($import_res | get ImportTaskId? | default null)
 
+  # Fail fast if the API response lacked an ImportTaskId — otherwise the
+  # next_steps would instruct the caller to poll a null task and fail later.
+  if $task_id == null {
+    return {action: "failed", step: "import_snapshot_parse", reason: "ImportTaskId not present in import-snapshot response", detail: $import_res, provider: "aws_ec2"}
+  }
+
   {
     action:          "import-started"
     provider:        "aws_ec2"

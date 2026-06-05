@@ -13,6 +13,14 @@ def "main deploy" [
     error make {msg: $"manifest file not found: ($manifest_file)"}
   }
   let m      = open $manifest_file
+
+  # Fail-closed safety guard: reject shell-injection vectors (callback/custom
+  # image URLs, hostname, output_dir, names) before adapters interpolate them.
+  let safety = manifest_safety_check $m
+  if not $safety.ok {
+    return ({action: "failed", reason: "manifest_safety_check failed", errors: $safety.errors, manifest_path: $manifest_file} | to json --indent 2)
+  }
+
   let pid    = if $provider != "" { $provider } else { $m.deploy?.provider? | default "" }
   let cat    = open "catalog/providers.v1.json"
   let matches = ($cat.providers | where id == $pid)
@@ -60,7 +68,7 @@ def "main deploy" [
     digitalocean_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else if $pid == "aws_ec2" {
     aws_deploy $m $image --dry-run=$dry_run | to json --indent 2
-  } else if $pid == "gce_gcp" {
+  } else if $pid == "gce_gcp" or $pid == "gcp" {
     gce_deploy $m $image --dry-run=$dry_run | to json --indent 2
   } else {
     # OCI adapter has a top-level `source formats/convert.nu` which leaks a closure

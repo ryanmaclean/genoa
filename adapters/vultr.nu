@@ -110,7 +110,7 @@ export def vultr_deploy [
     if $balance == 0 and $pending > 0 {
       return ({
         action: "failed"
-        reason: $"Vultr account balance is $0 with \$($pending) pending charges — add payment method to continue"
+        reason: ("Vultr account balance is $0 with $" + ($pending | into string) + " pending charges — add payment method to continue")
         balance: $balance
         pending_charges: $pending
         provider: "vultr"
@@ -147,15 +147,34 @@ export def vultr_deploy [
   # --- Step 2: Poll until complete (max 60 × 30s = 30 min) ---
   mut snap_status = "pending"
   mut poll_count = 0
+  mut api_failures = 0
   while $snap_status != "complete" and $poll_count < 60 {
     ^sleep 30
+    # "api-error" sentinel distinguishes a failed poll call from a legitimate
+    # snapshot status, so persistent API failures break early instead of
+    # looping for the full 30-minute window.
     let poll = try {
       ^$vultr_cli snapshot get $snap_id -o json | from json
     } catch {
-      {snapshot: {status: "unknown"}}
+      {snapshot: {status: "api-error"}}
     }
     $snap_status = $poll.snapshot?.status? | default "unknown"
     $poll_count = $poll_count + 1
+    if $snap_status == "api-error" {
+      $api_failures = $api_failures + 1
+    } else {
+      $api_failures = 0
+    }
+    if $api_failures >= 3 {
+      return {
+        action: "failed"
+        step: "poll_snapshot"
+        snap_id: $snap_id
+        status: "api-error"
+        reason: "api_polling_errors"
+        provider: "vultr"
+      }
+    }
     if $snap_status == "error" {
       return {
         action: "failed"

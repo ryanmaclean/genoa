@@ -1,6 +1,75 @@
 # lib/validate.nu — manifest validation + receipt verify
 # Sourced by genoa.nu. No cross-module sources.
 
+# ---------------------------------------------------------------------------
+# manifest_safety_check — fail-closed guard against shell command injection.
+#
+# Several profile/adapter steps interpolate manifest fields directly into
+# `^sh -c $cmd` strings (uefi.nu run_step) or into bash bootstrap templates
+# (option-e-lsd/lsd.nu). A crafted manifest can therefore inject arbitrary
+# shell commands via fields like image.name, image.output_dir,
+# network.hostname, agent.name, or callback/custom-image URLs.
+#
+# This guard is invoked at the top of `main build` and `main deploy` BEFORE
+# any command is constructed. It rejects shell metacharacters in the
+# dangerous fields. Returns a record {ok: bool, errors: [string]}.
+#
+# Returned (not thrown) so callers control the JSON error envelope.
+# ---------------------------------------------------------------------------
+export def manifest_safety_check [m: record] {
+  mut errors = []
+
+  # Characters that are dangerous in either sh -c strings or bash templates:
+  # whitespace, ; & | ` $ ( ) < > newline, quotes, backslash.
+  let shell_meta = '[;&|`$(){}<>\n\r\t "\\' + "'" + '\[\]*?!~^]'
+
+  # slug-style fields: strict alnum + _ - . (no path separators or meta).
+  # image.name flows into rm/truncate/mdconfig/gpart/cp commands.
+  let img_name = ($m.image?.name? | default "")
+  if $img_name != "" and not ($img_name =~ '^[a-zA-Z0-9][a-zA-Z0-9_.-]*$') {
+    $errors = ($errors | append ("image.name contains illegal characters: " + $img_name))
+  }
+
+  # agent.name flows into cp paths (uefi.nu step 12) and rc.conf var names.
+  let agent_name = ($m.agent?.name? | default "")
+  if $agent_name != "" and not ($agent_name =~ '^[a-zA-Z0-9][a-zA-Z0-9_.-]*$') {
+    $errors = ($errors | append ("agent.name contains illegal characters: " + $agent_name))
+  }
+
+  # network.hostname flows into rc.conf, which FreeBSD rc(8) sources as shell.
+  let hostname = ($m.network?.hostname? | default "")
+  if $hostname != "" and not ($hostname =~ '^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$') {
+    $errors = ($errors | append ("network.hostname is not a valid DNS-style name: " + $hostname))
+  }
+
+  # image.output_dir is a path: allow path chars but reject shell meta and '..'.
+  let output_dir = ($m.image?.output_dir? | default "")
+  if $output_dir != "" {
+    if ($output_dir =~ $shell_meta) {
+      $errors = ($errors | append ("image.output_dir contains shell metacharacters: " + $output_dir))
+    } else if ("/.." in ("/" + $output_dir + "/")) or ($output_dir | str starts-with "..") {
+      $errors = ($errors | append ("image.output_dir must not contain a '..' path component: " + $output_dir))
+    } else if not ($output_dir =~ '^[a-zA-Z0-9._/-]+$') {
+      $errors = ($errors | append ("image.output_dir contains disallowed characters: " + $output_dir))
+    }
+  }
+
+  # URL-bearing fields reach bash bootstrap templates (option-e-lsd). Reject
+  # any shell metacharacter; permit only plain URL-safe characters.
+  for field in [
+    {name: "deploy.callback_url",     val: ($m.deploy?.callback_url? | default "")}
+    {name: "deploy.custom_image_url", val: ($m.deploy?.custom_image_url? | default "")}
+    {name: "image.url",               val: ($m.image?.url? | default "")}
+    {name: "agent.source.url",        val: ($m.agent?.source?.url? | default "")}
+  ] {
+    if $field.val != "" and ($field.val =~ $shell_meta) {
+      $errors = ($errors | append ($field.name + " contains shell metacharacters: " + $field.val))
+    }
+  }
+
+  {ok: ($errors | is-empty), errors: $errors}
+}
+
 def "main validate" [manifest_file: string] {
   mut checks = []
   mut errors = []

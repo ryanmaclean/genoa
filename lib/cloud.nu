@@ -161,29 +161,46 @@ def "main watch" [
   mut polls = 0
   mut current_status = "unknown"
   mut reached = false
+  mut api_failures = 0       # consecutive poll-call failures
+  mut api_unreachable = false
 
   loop {
     $polls = $polls + 1
     let now = (date now | into int)
     let elapsed = ($now - $started) / 1_000_000_000  # nanoseconds to seconds
 
-    # Poll the resource
+    # Poll the resource. A failed API call returns the sentinel "api-error"
+    # (distinct from a legitimate resource status of "error") so we can break
+    # early instead of silently looping for the whole timeout window.
     $current_status = if $type == "snapshot" {
       try {
         let s = (^$vultr snapshot get $resource_id --output json | from json)
         $s.snapshot?.status? | default "unknown"
-      } catch { "error" }
+      } catch { "api-error" }
     } else {
       try {
         let i = (^$vultr instance get $resource_id --output json | from json)
         $i.instance?.power_status? | default "unknown"
-      } catch { "error" }
+      } catch { "api-error" }
     }
 
     print -e $"  [($polls)] ($resource_id | str substring 0..8)... status=($current_status) elapsed=($elapsed)s"
 
+    if $current_status == "api-error" {
+      $api_failures = $api_failures + 1
+    } else {
+      $api_failures = 0
+    }
+
     if $current_status == $until {
       $reached = true
+      break
+    }
+
+    # Abort after 3 consecutive API failures rather than masking an
+    # unreachable API as a slow resource for the full timeout.
+    if $api_failures >= 3 {
+      $api_unreachable = true
       break
     }
 
@@ -197,7 +214,7 @@ def "main watch" [
   let total_elapsed = ((date now | into int) - $started) / 1_000_000_000
 
   {
-    action:          "watch"
+    action:          (if $api_unreachable { "failed" } else { "watch" })
     resource_id:     $resource_id
     type:            $type
     final_status:    $current_status
@@ -205,7 +222,9 @@ def "main watch" [
     target:          $until
     polls:           $polls
     elapsed_seconds: $total_elapsed
-    timed_out:       (not $reached)
+    timed_out:       (not $reached and not $api_unreachable)
+    api_unreachable: $api_unreachable
+    reason:          (if $api_unreachable { "api_polling_errors" } else { null })
   } | to json --indent 2
 }
 

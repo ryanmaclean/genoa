@@ -133,11 +133,12 @@ export def linode_deploy [
     return {action: "failed", reason: "LINODE_TOKEN not set", provider: "linode"}
   }
 
-  # Compute sha256 of the image (live path only)
+  # Compute sha256 of the image (live path only).
+  # shasum/sha256sum output is "<hash>  <file>"; take the first whitespace token.
   let image_sha256 = if ($nu.os-info.name == "macos") {
-    (^shasum -a 256 $image_path | str trim | split column " " | get column1.0)
+    (^shasum -a 256 $image_path | str trim | split row " " | first)
   } else {
-    (^sha256sum $image_path | str trim | split column " " | get column1.0)
+    (^sha256sum $image_path | str trim | split row " " | first)
   }
 
   # Step 1 — create Linode instance (raw unformatted disk)
@@ -168,11 +169,22 @@ export def linode_deploy [
   # Step 3 — wait for rescue mode (poll status, max 20 attempts × 15s = 5 min)
   mut status = "provisioning"
   mut attempts = 0
+  mut api_failures = 0
   while $status != "running" and $attempts < 20 {
     ^sleep 15sec
-    let info = try { ^$linode_cli linodes view $linode_id --json | from json } catch { [{status: "unknown"}] }
+    # "api-error" sentinel distinguishes a failed poll call from a real status
+    # so persistent API failures abort early rather than burning the full 5 min.
+    let info = try { ^$linode_cli linodes view $linode_id --json | from json } catch { [{status: "api-error"}] }
     $status = $info | get 0?.status? | default "unknown"
     $attempts = $attempts + 1
+    if $status == "api-error" {
+      $api_failures = $api_failures + 1
+    } else {
+      $api_failures = 0
+    }
+    if $api_failures >= 3 {
+      return {action: "failed", step: "wait_rescue", linode_id: $linode_id, status: "api-error", reason: "api_polling_errors"}
+    }
   }
   if $status != "running" {
     return {action: "failed", step: "wait_rescue", linode_id: $linode_id, status: $status}
@@ -185,16 +197,23 @@ export def linode_deploy [
     "unknown"
   }
 
+  # next_steps run inside the remote rescue shell and must fetch the image over
+  # HTTP — NOT the local builder path. Use the published image_url; if absent,
+  # emit an explicit placeholder so the user knows to substitute the real URL.
+  let remote_image_url = if $image_url != "" { $image_url } else { "<PUBLISHED_IMAGE_URL>" }
+
   return {
     action: "rescue_ready"
     provider: "linode"
     linode_id: $linode_id
     rescue_ip: $rescue_ip
     status: "rescue_boot_complete"
+    image_url: $remote_image_url
+    image_sha256: $image_sha256
     next_steps: [
       {step: 4, action: "manual_ssh",    cmd: $"ssh root@($rescue_ip)",                                                                           note: "SSH into rescue environment — may take 1-2 min after status=running"}
-      {step: 5, action: "manual_verify", cmd: $"curl -fsSL ($image_path) | sha256sum",                                                            note: "Verify image sha256 in rescue shell"}
-      {step: 6, action: "manual_dd",     cmd: $"curl -fsSL ($image_path) | dd of=/dev/sda bs=1M conv=fsync status=progress",                      note: "Write image to disk"}
+      {step: 5, action: "manual_verify", cmd: $"curl -fsSL ($remote_image_url) | sha256sum",                                                      note: $"Verify image sha256 in rescue shell — expect ($image_sha256)"}
+      {step: 6, action: "manual_dd",     cmd: $"curl -fsSL ($remote_image_url) | dd of=/dev/sda bs=1M conv=fsync status=progress",                note: "Write image to disk"}
       {step: 7, action: "manual_reboot", cmd: "shutdown -r now",                                                                                   note: "Reboot into FreeBSD"}
     ]
     post_boot: [

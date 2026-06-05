@@ -11,6 +11,15 @@ def "main build" [
     error make {msg: $"manifest file not found: ($manifest_file)"}
   }
   let m = open $manifest_file
+
+  # Fail-closed safety guard: reject shell-injection vectors before any
+  # command string is constructed. build does not run `validate`, so this
+  # check cannot be bypassed by invoking build directly with a crafted manifest.
+  let safety = manifest_safety_check $m
+  if not $safety.ok {
+    return ({action: "failed", reason: "manifest_safety_check failed", errors: $safety.errors, manifest_path: $manifest_file} | to json --indent 2)
+  }
+
   # CLI --profile flag takes precedence over manifest profile field
   let p = if ($profile | is-not-empty) { $profile } else { $m.profile? | default "uefi" }
   let profile_file = $"profiles/($p).nu"
@@ -40,7 +49,7 @@ def "main build" [
     let ssh_port = if ($parts | length) > 1 { $parts | last } else { "22" }
     let remote_manifest = $"/tmp/genoa-remote-($manifest_basename).toml"
     if $dry_run {
-      return {
+      return ({
         action: "would-run"
         build_host: $build_host
         ssh_dest: $ssh_dest
@@ -48,23 +57,23 @@ def "main build" [
         remote_manifest: $remote_manifest
         cmd: $"scp -P ($ssh_port) ($manifest_file) ($ssh_dest):($remote_manifest) && ssh -p ($ssh_port) ($ssh_dest) 'nu ~/genoa/genoa.nu build ($remote_manifest) --profile ($p)'"
         note: "Remote build via target.build_host. Run without --dry-run to execute."
-      }
+      } | to json --indent 2)
     }
     let scp_result = try {
       ^scp -P $ssh_port $manifest_file $"($ssh_dest):($remote_manifest)" | complete
     } catch { |e|
-      return {action: "failed", step: "scp_manifest", error: $e.msg, build_host: $build_host}
+      return ({action: "failed", step: "scp_manifest", error: $e.msg, build_host: $build_host} | to json --indent 2)
     }
     if $scp_result.exit_code != 0 {
-      return {action: "failed", step: "scp_manifest", stderr: $scp_result.stderr, build_host: $build_host}
+      return ({action: "failed", step: "scp_manifest", stderr: $scp_result.stderr, build_host: $build_host} | to json --indent 2)
     }
     let ssh_result = try {
       ^ssh -p $ssh_port $ssh_dest $"nu ~/genoa/genoa.nu build ($remote_manifest) --profile ($p)" | complete
     } catch { |e|
-      return {action: "failed", step: "ssh_build", error: $e.msg, build_host: $build_host}
+      return ({action: "failed", step: "ssh_build", error: $e.msg, build_host: $build_host} | to json --indent 2)
     }
     if $ssh_result.exit_code != 0 {
-      return {action: "failed", step: "ssh_build", exit_code: $ssh_result.exit_code, stderr: $ssh_result.stderr}
+      return ({action: "failed", step: "ssh_build", exit_code: $ssh_result.exit_code, stderr: $ssh_result.stderr} | to json --indent 2)
     }
     let remote_result = try { $ssh_result.stdout | from json } catch { {raw: $ssh_result.stdout} }
 
@@ -77,26 +86,30 @@ def "main build" [
     } catch { |e| {exit_code: -1, stderr: $e.msg} }
 
     if $scp_image.exit_code != 0 {
-      return {action: "failed", step: "scp_image_back", stderr: $scp_image.stderr, build_host: $build_host, remote_result: $remote_result}
+      return ({action: "failed", step: "scp_image_back", stderr: $scp_image.stderr, build_host: $build_host, remote_result: $remote_result} | to json --indent 2)
     }
 
     let scp_receipt = try {
       ^scp -P $ssh_port $"($ssh_dest):($remote_receipt)" $output_dir | complete
     } catch { |e| {exit_code: -1, stderr: $e.msg} }
 
-    # Receipt SCP failure is a warning, not a hard failure
+    # Receipt SCP failure is a warning, not a hard failure — but surface it
+    # explicitly so callers can distinguish "receipt copy failed" from
+    # "no receipt produced". An empty receipt_path alone is ambiguous.
     let receipt_back = if $scp_receipt.exit_code == 0 {
       $"($output_dir)/($remote_receipt | path basename)"
     } else {
       ""
     }
+    let receipt_error = if $scp_receipt.exit_code == 0 { null } else { ($scp_receipt.stderr? | default "receipt scp failed") }
 
     return ($remote_result | merge {
       build_host: $build_host
       remote: true
       image_path: $"($output_dir)/($remote_image | path basename)"
       receipt_path: $receipt_back
-    })
+      receipt_error: $receipt_error
+    } | to json --indent 2)
   }
 
   let build_result = if not ($profile_file | path exists) {
@@ -114,9 +127,13 @@ def "main build" [
 
   # Write receipt file
   let is_freebsd = try { (^uname -s | str trim) == "FreeBSD" } catch { false }
+  # Distinct sentinels: PLACEHOLDER_DRY_RUN means "hash intentionally not
+  # computed" (dry-run or cross-host build where the image is not local).
+  # HASH_COMPUTATION_FAILED means the hash tool ran and genuinely failed — the
+  # receipt must not claim a placeholder as if it were a real, deliberate value.
   let image_sha256 = if $dry_run { "PLACEHOLDER_DRY_RUN" } else {
     if $is_freebsd and ($image_path | path exists) {
-      try { ^sha256 -q $image_path | str trim } catch { "PLACEHOLDER_DRY_RUN" }
+      try { ^sha256 -q $image_path | str trim } catch { "HASH_COMPUTATION_FAILED" }
     } else {
       "PLACEHOLDER_DRY_RUN"
     }
@@ -124,7 +141,7 @@ def "main build" [
   let manifest_sha256 = try {
     ^sha256 -q $manifest_file | str trim  # FreeBSD
   } catch {
-    try { ^sha256sum $manifest_file | split row " " | first | str trim } catch { "PLACEHOLDER_DRY_RUN" }
+    try { ^sha256sum $manifest_file | split row " " | first | str trim } catch { (if $dry_run { "PLACEHOLDER_DRY_RUN" } else { "HASH_COMPUTATION_FAILED" }) }
   }
 
   # Signing step — runs after image write, before receipt

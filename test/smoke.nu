@@ -770,6 +770,27 @@ provider = \"vultr\"
     $"action=($action) provider=($provider)"
   })
 
+  # safety_guard_rejects_injection — manifest_safety_check flags shell metacharacters
+  # in image.name and rejects the manifest (ok=false). Guards CMD-INJ-001..004.
+  (run_test "safety_guard_rejects_injection" {
+    let rec = (genoa "(manifest_safety_check {image: {name: \"foo; rm -rf /\"}}) | to json")
+    let ok = ($rec | get ok)
+    if $ok != false {
+      error make {msg: $"expected ok=false for malicious image.name, got ($ok)"}
+    }
+    $"ok=($ok)"
+  })
+
+  # safety_guard_passes_clean — a clean manifest passes the safety guard (ok=true)
+  (run_test "safety_guard_passes_clean" {
+    let rec = (genoa "(manifest_safety_check {image: {name: \"genoa-freebsd\", output_dir: \"./out\"}, network: {hostname: \"smolbsd-host\"}, agent: {name: \"smolagent\"}}) | to json")
+    let ok = ($rec | get ok)
+    if $ok != true {
+      error make {msg: $"expected ok=true for clean manifest, got ($ok); errors: ($rec | get errors | to json)"}
+    }
+    $"ok=($ok)"
+  })
+
 ]
 
 # ---------------------------------------------------------------------------

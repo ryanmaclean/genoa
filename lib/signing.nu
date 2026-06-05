@@ -15,7 +15,8 @@ def "main sign" [
     {}
   }
   let effective_tool = if $tool != "" { $tool } else { ($m | get -o signing.tool | default "none") }
-  let effective_key  = if $key  != "" { $key  } else { ($m | get -o signing.key_path | default "") }
+  # Schema + build.nu use signing.key_file; accept signing.key_path as a legacy alias.
+  let effective_key  = if $key  != "" { $key  } else { ($m | get -o signing.key_file | default ($m | get -o signing.key_path | default "")) }
 
   if $effective_tool == "none" {
     return ({action: "unsigned", tool: "none", image: $image_path} | to json --indent 2)
@@ -62,6 +63,12 @@ def "main sign" [
 
   if $result.exit_code != 0 {
     return ({action: "failed", reason: ($result.stderr? | default "signing tool returned non-zero exit"), tool: $effective_tool, exit_code: $result.exit_code} | to json --indent 2)
+  }
+
+  # Exit 0 does not guarantee the signature artifact was written (disk full,
+  # parent-dir permissions). Confirm the .sig/.minisig file actually exists.
+  if not ($sig_path | path exists) {
+    return ({action: "failed", reason: "signature_file_not_created", tool: $effective_tool, signature_path: $sig_path} | to json --indent 2)
   }
 
   {action: "signed", tool: $effective_tool, image: $image_path, signature: $sig_path, key: $effective_key} | to json --indent 2

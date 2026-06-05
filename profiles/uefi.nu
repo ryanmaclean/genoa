@@ -155,7 +155,15 @@ export def uefi_build [manifest: record, dry_run: bool = false] {
     let ssh_keys = $manifest | get network? | get ssh_keys? | default []
     let authorized_keys_path = $"/tmp/genoa-authorized-keys-($manifest | get image? | get name? | default 'unknown')"
     if ($ssh_keys | length) > 0 {
-        $ssh_keys | str join "\n" | save --force $authorized_keys_path
+        # Guard the temp-file write: a silent failure here (permissions, disk
+        # full) would otherwise surface as a confusing error in step 13b.
+        let key_save = try {
+            $ssh_keys | str join "\n" | save --force $authorized_keys_path
+            {ok: true}
+        } catch { |e| {ok: false, error: $e.msg} }
+        if not $key_save.ok {
+            return {action: "build-failed", failed_step: "write_authorized_keys", exit_code: 1, detail: {error: $key_save.error, path: $authorized_keys_path}}
+        }
     }
 
     # ── step 13b: install authorized_keys into image (would-run) ───────────
