@@ -1,0 +1,45 @@
+schema_version = "v1"
+profile = "uefi"
+
+[image]
+name = "smolbsd-amd64"
+version = "v0.1.4"
+format = "raw"
+size_mb = 2048
+output_dir = "./out"
+description = "FreeBSD 15 UEFI amd64 — v0.1.4: security-hardened, real ii-agent, built on fbryz3070"
+
+[target]
+os = "freebsd"
+os_version = "15.0-RELEASE"
+arch = "amd64"
+platform = "generic"
+
+[kernel]
+config = "GENERIC"
+strip_debug = true
+
+[agent]
+name = "ii-agent"
+version = "v0.2.0"
+
+[agent.source]
+type = "local_path"
+path = "/root/genoa/out/ii-agent"
+
+[agent.rc_service]
+enabled = true
+name = "ii_agent"
+
+[network]
+interface = "vtnet0"
+mode = "dhcp"
+hostname = "smolbsd-v014"
+ssh_keys = []
+
+[deploy]
+provider = "vultr"
+region = "lax"
+
+[metadata]
+builder_notes = "Built on fbryz3070 (Ryzen 9 5950X, 128GB). v0.1.4 with manifest_safety_check injection guard."

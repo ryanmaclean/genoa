@@ -37,23 +37,33 @@ Status as of 2026-06-04. genoa builds minimal FreeBSD/NetBSD cloud images with e
 
 ---
 
+## 🏗️ Build host — MOVED to fbryz3070 (2026-06-04)
+
+- ✅ **New builder: `fbryz3070` (10.0.2.44)** — FreeBSD 15.0-RELEASE-p6 native, Ryzen 9 5950X (32 threads), **128 GiB RAM**, 226 GB free, all build tools + qemu present. Builds are fast and reliable; CAN mount md GPT partitions (verify-image works natively).
+- ⚰️ **Retired the 1 GB Vultr buildworld** (`108.61.206.203`) for builds — it CPU/RAM-starved and dropped SSH every build cycle. Keep it only as image HTTP host / Vultr deploy-staging if needed.
+- ⚠️ `jj` not installed on fbryz3070 — it pulls via `git` from GitHub; jj stays the local canonical workflow.
+
+---
+
 ## 🚧 Blocked (external dependencies)
 
 | Item | Blocker | Unblock action |
 |------|---------|----------------|
-| **Live Vultr deploy** | Account $0 balance; snapshot `d372185f` (v0.1.3) ready | Add Vultr credit |
-| **Vultr API access** | Home IP `24.80.182.14` not on API allowlist (dynamic IP) | Add IP to Vultr API allowlist, or use stable egress (Tailscale exit node) |
-| **Gitea Actions native FreeBSD CI** | act_runner can't reach LAN Gitea | Authorize Tailscale: `https://login.tailscale.com/a/f900156015407` |
+| **Live cloud deploy** | Vultr account $0 balance (postpaid may work); snapshots `d372185f` (v0.1.3) ready | Confirm Vultr postpaid allows instance create, or add credit |
+| **Gitea Actions native FreeBSD CI** | act_runner can't reach LAN Gitea (was on old buildworld) | Re-register runner on fbryz3070 (stable Gitea route) — easy now |
 | **Linode rescue-dd test** | `LINODE_TOKEN` not set | Set token, or skip Linode path |
-| **genoa suggest (Ollama)** | `ollama.local` unreachable from this network | Test from fleet host with Ollama access |
+| **genoa suggest (Ollama)** | only cloud-proxy models reachable locally | Test from fleet host with local Ollama models |
+
+Note: fleet network is intermittent (Gitea route flaps from the Mac; stable from fbryz3070). Vultr API IP-block cleared.
 
 ---
 
 ## 🔴 High priority
 
-- [ ] **Publish v0.1.4 Gitea release** — bundle: ii-agent /bin/sh, pkg install step, aarch64 fetch, audit fixes, lib/ refactor. Currently only v0.1.3 is released.
-- [ ] **Real cloud boot test** — every boot so far is QEMU. Need ONE successful boot on a real cloud VM (Vultr snapshot, or Linode rescue-dd, or wipe fbsd-x86-vultr-01). Confirms growfs, DHCP, ii-agent heartbeat work outside emulation.
-- [ ] **Finish vultr-01 boot test** — full 2GB image re-fetched (prior was 152MB partial). Re-run QEMU boot on `45.76.21.213`.
+- ✅ **v0.1.4 Gitea release PUBLISHED** (2026-06-04, release id 94685) — built on fbryz3070, 3 assets (289 MB image + receipt + manifest). verify-image 5/5 on the built image.
+- [ ] **Real cloud boot test** — every boot so far is QEMU. Need ONE successful boot on a real cloud VM (Vultr snapshot deploy, Linode rescue-dd, or wipe fbsd-x86-vultr-01). Confirms growfs, DHCP, ii-agent heartbeat outside emulation. (Vultr API works again — try deploy-from-snapshot `d372185f`.)
+- [ ] **Re-register Gitea act_runner on fbryz3070** — native FreeBSD CI with a stable Gitea route (the old buildworld couldn't reach Gitea without Tailscale).
+- [ ] **rc.d filename polish** — agent rc.d script installs as `ii-agent` (hyphen, from agent.name) while rcvar is `ii_agent` (underscore). Auto-starts at boot fine, but `service ii_agent ...` fails manually. Install rc.d as the rc_service.name.
 - [ ] **Diagnose buildworld SSH instability** — sshd drops every few minutes. Swap added but drops continue. Check `/var/log/auth.log`, cron, Vultr console. Candidate: OOM on 1GB RAM during builds.
 - [ ] **Actually build aarch64** — step 7b added but never executed. Fix example manifest (`agent.source.url` points at nonexistent `gitea.local:3000/ii/ii-agent`; sha256 is placeholder). Build + QEMU boot with `qemu-system-aarch64`.
 
