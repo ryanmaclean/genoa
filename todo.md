@@ -7,8 +7,9 @@ Status as of 2026-06-04. genoa builds minimal FreeBSD/NetBSD cloud images with e
 ## ✅ Done (v0.1.3 → v0.1.4-dev milestone)
 
 - **Image boots** — verified in 2 environments: FreeBSD QEMU (buildworld, KVM, ~30s) and macOS QEMU (Apple Silicon TCG, 121s). EDK2 UEFI → `BOOTx64.EFI` → loader → kernel → login prompt. The `mountroot>` bug is gone (`vfs.root.mountfrom` resolves).
-- **50/50 smoke tests** green on macOS, FreeBSD buildworld, and GitHub Actions CI.
+- **53/53 smoke tests** green on macOS, FreeBSD buildworld, and GitHub Actions CI.
 - **CI green** — Smoke Tests + Validate Manifests, Nu 0.111.0 musl.
+- **Security hardened** (2026-06-04, two ultracode review workflows) — closed a HIGH-severity command-injection class: manifest fields (`image.name`, `output_dir`, `network.hostname`, `agent.name`, `target.os_version`) flowed unsanitized into `^sh -c` in `profiles/uefi.nu`, and `build` never called `validate` so checks were bypassable. Fix: fail-closed `manifest_safety_check` at the top of `lib/build.nu` (runs before any command string is built) + shell-metachar + field-format validation in `lib/validate.nu`. Verified end-to-end: crafted injection manifests now return `action:failed` and execute nothing. Also: verify-image dry-run shape harmonized, notify temp-file cleanup guard, ~19 correctness/silent-failure/AX-first fixes. Deferred by design: BUG-13 (cosmetic step reorder), SF-7 (Vultr API error taxonomy — needs design).
 - **29 subcommands** — validate, build, run, sign, verify-image, diff, publish, deploy, deploy-from-snapshot, clone-instance, snapshots, snapshot-import/-status, instances, watch, providers, receipts, versions, notify, status, health, selftest, suggest, catalog, schema, describe.
 - **genoa.nu refactored** — 1875 lines → ~290-line shim + 9 `lib/` modules (incl. lib/tools.nu `find_bin`).
 - **Validator** — 20 checks incl. JSON Schema Draft 7.
