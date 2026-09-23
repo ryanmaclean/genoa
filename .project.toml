@@ -1,0 +1,12 @@
+schema = "ryanlab.project.v1"
+name = "genoa"
+status = "active"
+role = "Artifact build, deployment, verification, and receipts"
+
+canonical_for = ["image-build", "deployment", "artifact-receipts", "provenance-receipts"]
+integrates_with = ["smolfire", "bop", "moth"]
+do_not_implement = ["agent-scheduler", "runtime-state-machine", "filesystem-history"]
+
+registry = "ryanmaclean/skills:docs/PROJECTS.md"
+glossary = "ryanmaclean/skills:docs/GLOSSARY.md"
+benchmark_schema = "ryanmaclean/skills:schemas/bench.v1.schema.json"
