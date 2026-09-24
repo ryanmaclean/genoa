@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Writable state-disk filesystem support matrix for the microvm profile. support: supported = in-tree and writable; experimental = out-of-tree/unverified (validate warns); unsupported = rejected by validate. Tools listed are what `genoa build` needs on the BUILD host to format the state image; a disk whose tools are absent is reported as requires-host and the build fails closed (no placeholder hash is ever reported as built).",
+  "filesystems": [
+    {
+      "id": "ffs",
+      "display_name": "UFS2/FFS",
+      "platforms": {
+        "freebsd": {"support": "supported", "notes": "UFS2; soft updates or SU+J selectable via options.journal"},
+        "netbsd":  {"support": "supported", "notes": "FFSv2; WAPBL journaling is a mount option (-o log), fss(4) for persistent snapshots"}
+      },
+      "build_tools": ["makefs"],
+      "identity": {"label": true, "native_uuid": false, "native_version": "fss(4)/UFS snapshots (not transaction-granular)"}
+    },
+    {
+      "id": "lfs",
+      "display_name": "NetBSD LFS",
+      "platforms": {
+        "freebsd": {"support": "unsupported", "notes": "LFS is not in the FreeBSD tree"},
+        "netbsd":  {"support": "supported", "notes": "in-tree log-structured FS; checkpoints are the version candidate (smolfire #63)"}
+      },
+      "build_tools": ["vndconfig", "newfs_lfs"],
+      "identity": {"label": false, "native_uuid": false, "native_version": "LFS checkpoint/serial number"}
+    },
+    {
+      "id": "hammer2",
+      "display_name": "HAMMER2",
+      "platforms": {
+        "freebsd": {"support": "experimental", "notes": "out-of-tree port (T. Kusumi); confirm write support before relying on it"},
+        "netbsd":  {"support": "experimental", "notes": "out-of-tree port (T. Kusumi); confirm write support before relying on it"}
+      },
+      "build_tools": ["newfs_hammer2"],
+      "identity": {"label": true, "native_uuid": true, "native_version": "snapshot / PFS transaction id"}
+    },
+    {
+      "id": "hammer1",
+      "display_name": "HAMMER (v1)",
+      "platforms": {
+        "freebsd": {"support": "unsupported", "notes": "DragonFly BSD only"},
+        "netbsd":  {"support": "unsupported", "notes": "DragonFly BSD only"}
+      },
+      "build_tools": ["newfs_hammer"],
+      "identity": {"label": true, "native_uuid": true, "native_version": "HAMMER TID (create/delete transaction ids)"}
+    }
+  ]
+}

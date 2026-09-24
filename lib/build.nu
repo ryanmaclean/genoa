@@ -6,11 +6,15 @@ def "main build" [
   manifest_file: string
   --profile: string = "uefi"
   --dry-run
+  --run-id: string = ""   # logical run identity (e.g. a BOP run/card id) recorded in receipt.correlation
 ] {
   if not ($manifest_file | path exists) {
     error make {msg: $"manifest file not found: ($manifest_file)"}
   }
   let m = open $manifest_file
+  if $run_id != "" and not ($run_id =~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$') {
+    return ({action: "failed", reason: "--run-id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", run_id: $run_id, manifest_path: $manifest_file} | to json --indent 2)
+  }
 
   # Fail-closed safety guard: reject shell-injection vectors before any
   # command string is constructed. build does not run `validate`, so this
@@ -21,7 +25,9 @@ def "main build" [
   }
 
   # CLI --profile flag takes precedence over manifest profile field
-  let p = if ($profile | is-not-empty) { $profile } else { $m.profile? | default "uefi" }
+  # A manifest that declares profile=microvm is never built by another
+  # profile: the default --profile value ("uefi") must not override it.
+  let p = if ($m.profile? | default "") == "microvm" { "microvm" } else if ($profile | is-not-empty) { $profile } else { $m.profile? | default "uefi" }
   let profile_file = $"profiles/($p).nu"
 
   # Derive receipt path from manifest basename
@@ -113,7 +119,9 @@ def "main build" [
   }
 
   let build_result = if not ($profile_file | path exists) {
-    {action: "failed", reason: $"unknown profile: ($p); supported: uefi, kboot, netbsd", profile: $p}
+    {action: "failed", reason: $"unknown profile: ($p); supported: uefi, kboot, netbsd, microvm", profile: $p}
+  } else if $p == "microvm" {
+    microvm_build $m $dry_run
   } else if $p == "kboot" {
     kboot_build $m $dry_run
   } else if $p == "netbsd" {
@@ -131,7 +139,13 @@ def "main build" [
   # computed" (dry-run or cross-host build where the image is not local).
   # HASH_COMPUTATION_FAILED means the hash tool ran and genuinely failed — the
   # receipt must not claim a placeholder as if it were a real, deliberate value.
-  let image_sha256 = if $dry_run { "PLACEHOLDER_DRY_RUN" } else {
+  let is_microvm = ($p == "microvm")
+  let image_sha256 = if $dry_run { "PLACEHOLDER_DRY_RUN" } else if $is_microvm {
+    # microvm hashes its artifact portably (any host); never claim a hash for
+    # an artifact that was not produced.
+    let h = ($build_record.boot?.artifact_sha256? | default "")
+    if ($h =~ '^[0-9a-f]{64}$') { $h } else { "HASH_COMPUTATION_FAILED" }
+  } else {
     if $is_freebsd and ($image_path | path exists) {
       try { ^sha256 -q $image_path | str trim } catch { "HASH_COMPUTATION_FAILED" }
     } else {
@@ -212,8 +226,24 @@ def "main build" [
       manifest_path: $manifest_file
     }
     signing: $sign_result
+    correlation: {
+      run_id: (if $run_id == "" { null } else { $run_id })
+      manifest_sha256: $manifest_sha256
+      artifact_sha256: $image_sha256
+    }
     claims: (do {
-      let claim_status = if $dry_run { "unverified" } else if $is_freebsd { "verified" } else { "unverified" }
+      let claim_status = if $dry_run { "unverified" } else if $is_microvm and ($image_sha256 =~ '^[0-9a-f]{64}$') { "verified" } else if $is_freebsd and (not $is_microvm) { "verified" } else { "unverified" }
+      let microvm_claims = if $is_microvm {
+        ($build_record.state_disks? | default [] | where { |d| ($d.sha256? | default "") =~ '^[0-9a-f]{64}$' } | each { |d|
+          {
+            claim: $"state disk ($d.name) \(fs=($d.fs)\) sha256 is ($d.sha256)"
+            executor: "sh"
+            probe: $"openssl dgst -sha256 -r ($d.path) | awk '{print $1}'"
+            expect: $d.sha256
+            status: "verified"
+          }
+        })
+      } else { [] }
       [
         {
           claim: $"image sha256 is ($image_sha256)"
@@ -250,9 +280,14 @@ def "main build" [
           expect: ($m.target?.os? | default "freebsd")
           status: "asserted"
         }
-      ]
+      ] | append $microvm_claims
     })
   }
+  # microvm: boot contract + state disks are part of the attestation
+  # (genoa #1). Boot artifact and each state disk are hashed independently.
+  let receipt = if $is_microvm {
+    $receipt | merge {boot: ($build_record.boot? | default null), state_disks: ($build_record.state_disks? | default []), launch: ($build_record.launch? | default null)}
+  } else { $receipt }
 
   $receipt | save --force $receipt_path
 

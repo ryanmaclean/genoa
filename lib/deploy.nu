@@ -22,6 +22,39 @@ def "main deploy" [
   }
 
   let pid    = if $provider != "" { $provider } else { $m.deploy?.provider? | default "" }
+
+  # microvm (direct-kernel PVH ELF): no cloud provider path here boots a bare
+  # kernel ELF, and genoa must not silently force UEFI/qcow2 conversion
+  # (genoa #1). Deploy = hand the local VMM launch plan from the receipt.
+  if ($m.profile? | default "") == "microvm" {
+    if $pid != "" {
+      return ({
+        action: "failed"
+        reason: $"profile=microvm produces a direct-kernel PVH ELF; provider '($pid)' needs a disk image. Launch with firecracker or qemu-microvm \(genoa deploy without --provider\), or build a uefi/kboot manifest for cloud targets."
+        provider: $pid
+        profile: "microvm"
+      } | to json --indent 2)
+    }
+    let out_dir = ($m.image?.output_dir? | default "./out")
+    let rpath = if $from_receipt != "" { $from_receipt } else { $"($out_dir)/($m.image?.name? | default "genoa")-($m.image?.version? | default "v0.0.0").receipt.json" }
+    if not ($rpath | path exists) {
+      return ({action: "failed", reason: $"receipt not found: ($rpath) — run genoa build first", profile: "microvm"} | to json --indent 2)
+    }
+    let r = (open $rpath)
+    return ({
+      action: (if $dry_run { "would-run" } else { "launch-plan" })
+      profile: "microvm"
+      receipt_path: $rpath
+      receipt_id: ($r.receipt_id? | default "")
+      artifact_sha256: ($r.hashes?.image_sha256? | default "")
+      vmm: ($r.boot?.vmm? | default [])
+      ready_marker: ($r.boot?.ready_marker? | default null)
+      qemu_microvm: ($r.launch?.qemu_microvm? | default null)
+      state_disks: ($r.state_disks? | default [] | each { |d| {name: $d.name, fs: $d.fs, path: $d.path, sha256: $d.sha256} })
+      note: "genoa does not start the VMM; run the qemu_microvm argv or firecracker --config-file <receipt.launch.firecracker_config_path>. Wait for ready_marker on the serial console."
+    } | to json --indent 2)
+  }
+
   let cat    = open "catalog/providers.v1.json"
   let matches = ($cat.providers | where id == $pid)
   let entry  = if ($matches | is-empty) { null } else { $matches | first }

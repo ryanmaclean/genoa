@@ -1,0 +1,51 @@
+# smolfire one-ELF microVM (kernel + embedded /rescue MFS root, no root disk)
+# packaged by genoa with one writable FFS state disk (genoa #1, smolfire #63).
+# The ELF is built by smolfire (bin/build-smolfire.sh -> /root/smolfire-kernel);
+# genoa copies, verifies (ELF magic + pinned sha256), hashes and attests it.
+schema_version = "v1"
+profile = "microvm"
+
+[image]
+name = "smolfire-microvm-amd64"
+version = "v0.1.0"
+format = "elf"
+output_dir = "./out"
+description = "SMOLFIRE one-ELF PVH microVM + FFS state disk"
+
+[target]
+os = "freebsd"
+os_version = "15.0-RELEASE"
+arch = "amd64"
+platform = "microvm"
+
+[kernel]
+config = "SMOLFIRE"
+
+[kernel.artifact]
+type = "local_path"
+path = "in/smolfire-kernel"
+version = "15.0-RELEASE SMOLFIRE"
+
+[boot]
+mode = "direct-kernel"
+protocol = "pvh"
+vmm = ["firecracker", "qemu-microvm"]
+cmdline = "hint.acpi.0.disabled=0 machdep.disable_tsc_calibration=0"
+memory_mb = 512
+vcpus = 1
+ready_marker = "SMOLFIRE_READY"
+
+[rootfs]
+type = "embedded"
+
+[[state_disks]]
+name = "state"
+fs = "ffs"
+size_mb = 256
+label = "bopstate"
+device = "vtbd0"
+mountpoint = "/state"
+journal = true
+
+[metadata]
+tracks = "genoa#1 smolfire#63"

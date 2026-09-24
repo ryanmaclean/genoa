@@ -165,6 +165,22 @@ For providers that require ext4 boot partitions (Linode, GCE). Uses GRUB2 + Linu
 
 Stub profile for NetBSD cloud image support. Returns a structured dry-run plan. Use with `examples/netbsd-vultr-amd64.toml`.
 
+### microvm (`profiles/microvm.nu`) — direct-kernel PVH + state disks
+
+Packages a **pre-built** PVH-bootable kernel ELF — smolfire's one-ELF SMOLFIRE microVM (kernel + embedded MFS root, no root disk) or a NetBSD 11 `netbsd-MICROVM` kernel — together with **independently hashable writable state disks** (FFS, NetBSD LFS, HAMMER2). smolfire owns the OS build; genoa owns packaging, hashes, launch plans and the receipt (issue #1).
+
+```sh
+nu genoa.nu validate examples/freebsd-smolfire-microvm-amd64.toml
+nu genoa.nu build    examples/netbsd11-microvm-amd64.toml --dry-run --run-id <bop-run-id>
+nu genoa.nu deploy   examples/freebsd-smolfire-microvm-amd64.toml --dry-run   # local VMM launch plan
+```
+
+- `boot.mode = "direct-kernel"`, `image.format = "elf"`; `boot.vmm` = `firecracker` and/or `qemu-microvm` (x86 only). The build emits a Firecracker `--config-file` body and a `qemu-system-* -M microvm` argv; genoa never starts the VMM.
+- `rootfs.type = "embedded"` (no root disk) or `"image"` (immutable initrd/ramdisk file, hashed separately).
+- `[[state_disks]]`: `name`, `fs` (`ffs|lfs|hammer2|hammer1`), `size_mb`, optional `label`, `uuid`, `device`, `mountpoint`, `journal`. Which filesystem is allowed on which target OS comes from `catalog/statefs.v1.json` (supported / experimental → warning / unsupported → error; HAMMER1 is DragonFly-only and always rejected).
+- Real builds: copying + ELF-magic + pinned-sha256 check of the boot artifact works on any host. A state disk is formatted only when its tools exist on the build host (FFS: `makefs` on FreeBSD/NetBSD; LFS: `vndconfig`+`newfs_lfs` on NetBSD; HAMMER2: `newfs_hammer2`). Otherwise that disk is `requires-host`, its `sha256` is `null`, and the build returns `build-failed` — a disk that was not built never gets a hash.
+- `deploy` with a cloud `--provider` is refused (no silent UEFI/qcow2 conversion); without a provider it returns the launch plan from the receipt.
+
 ## Receipt schema
 
 Every build produces `<output_dir>/<name>-<version>.receipt.json`:
@@ -179,9 +195,12 @@ Every build produces `<output_dir>/<name>-<version>.receipt.json`:
   "build":  { "host": "", "profile": "", "os_version": "", "arch": "", "genoa_version": "", "dry_run": false },
   "agent":  { "name": "", "version": "", "install_path": "" },
   "hashes": { "image_sha256": "", "manifest_sha256": "" },
+  "correlation": { "run_id": "<--run-id or null>", "manifest_sha256": "", "artifact_sha256": "" },
   "claims": [{ "claim": "", "probe": "", "expect": "" }]
 }
 ```
+
+`profile = "microvm"` receipts add `boot` (mode, vmm, cmdline, kernel version, `root_disk: false`, artifact sha256, rootfs identity), `state_disks[]` (fs, label, uuid + uuid_source, device, path, sha256 per disk) and `launch` (Firecracker config / qemu argv). `correlation` joins the artifact to a run by `(run_id, content hashes)`; genoa never mints its own ordering/version counter — filesystem-native versions (HAMMER TID, LFS checkpoint) stay with the filesystem. The full contract is `schema/receipt.v1.json` (v1.1.0, additive). `nu genoa.nu verify <receipt>` re-hashes the boot artifact and every built state disk.
 
 Verify a receipt: `nu genoa.nu verify out/smolbsd-v0.1.0.receipt.json`
 

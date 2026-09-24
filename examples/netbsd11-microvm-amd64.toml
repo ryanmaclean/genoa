@@ -1,0 +1,52 @@
+# NetBSD 11 MICROVM sibling (smolfire #64): netbsd-MICROVM kernel + immutable
+# rootfs image + one writable LFS state disk (FFS/WAPBL is the control).
+# LFS state disks are formatted with vnd(4)+newfs_lfs, so a real (non-dry-run)
+# build must run on a NetBSD build host; elsewhere it fails closed with
+# action=build-failed / requires-host.
+schema_version = "v1"
+profile = "microvm"
+
+[image]
+name = "netbsd11-microvm-amd64"
+version = "v0.1.0"
+format = "elf"
+output_dir = "./out"
+description = "NetBSD 11 MICROVM + LFS state disk"
+
+[target]
+os = "netbsd"
+os_version = "11.0"
+arch = "amd64"
+platform = "microvm"
+
+[kernel]
+config = "MICROVM"
+
+[kernel.artifact]
+type = "local_path"
+path = "in/netbsd-MICROVM"
+version = "11.0 MICROVM"
+
+[boot]
+mode = "direct-kernel"
+protocol = "pvh"
+vmm = ["qemu-microvm"]
+cmdline = "console=com root=md0a smolfire.state_dev=ld0a smolfire.state_fs=lfs"
+memory_mb = 256
+vcpus = 1
+ready_marker = "SMOLFIRE_NETBSD_READY"
+
+[rootfs]
+type = "image"
+path = "in/netbsd-rootfs.fs"
+device = "md0"
+
+[[state_disks]]
+name = "state"
+fs = "lfs"
+size_mb = 256
+device = "ld0"
+mountpoint = "/state"
+
+[metadata]
+tracks = "genoa#1 smolfire#64"

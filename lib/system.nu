@@ -255,6 +255,6 @@ def "main status" [--dir: string = "./out", --dry-run] {
     recent_builds:  $recent_builds
     snapshots:      $snapshots
     instances:      $instances
-    http_server:    "http://108.61.206.203:8080/"
+    http_server:    "http://100.72.96.104:8080/"  # Tailscale-only image server
   } | to json --indent 2
 }
