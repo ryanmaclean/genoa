@@ -3,6 +3,20 @@
 All notable changes to genoa are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [Unreleased]
+
+### Added — microvm profile (issue #1)
+- `profiles/microvm.nu`: direct-kernel PVH profile packaging a pre-built kernel ELF (smolfire one-ELF, NetBSD 11 MICROVM) with independently hashable writable state disks (FFS / LFS / HAMMER2); argv-only execution, fail-closed `requires-host` for disks whose tools are absent.
+- `catalog/statefs.v1.json`: state filesystem x target OS support matrix (supported / experimental / unsupported) used by `validate`.
+- Manifest schema: `profile = "microvm"`, `image.format = "elf"`, `boot`, `kernel.artifact`, `rootfs`, `state_disks`; agent optional for microvm; microvm manifests are held to the JSON Schema (legacy profiles stay advisory).
+- Receipt schema v1.1.0 (additive): `boot`, `state_disks`, `launch`, `correlation`; also documents fields `build` already emitted (`build.profile`, `hashes.manifest_path`, `signing.action`, `genoa-*` builder types, hash sentinels) so dry-run and real receipts now validate.
+- `build --run-id` / `run --run-id`: logical run identity recorded in `receipt.correlation.run_id`.
+- `verify` re-hashes each built state disk; `deploy` refuses cloud providers for microvm and returns the local VMM launch plan instead.
+- Examples: `examples/freebsd-smolfire-microvm-amd64.toml`, `examples/netbsd11-microvm-amd64.toml`. 12 new smoke tests (65 total).
+
+### Changed
+- `status.http_server` now points at the Tailscale-only image server `http://100.72.96.104:8080/`.
+
 ## [v0.1.4-dev] — Unreleased
 
 ### Added (this session, 2026-05-16)

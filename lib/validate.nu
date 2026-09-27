@@ -78,7 +78,124 @@ export def manifest_safety_check [m: record] {
     }
   }
 
+  # microvm fields (profiles/microvm.nu). Paths and names flow into cp /
+  # makefs / newfs_* / qemu argv strings, so apply the same strict rules.
+  let safe_path_re = '^[A-Za-z0-9._/-]+$'
+  for field in [
+    {name: "kernel.artifact.path", val: ($m.kernel?.artifact?.path? | default "")}
+    {name: "rootfs.path",          val: ($m.rootfs?.path? | default "")}
+  ] {
+    if $field.val != "" {
+      if not ($field.val =~ $safe_path_re) {
+        $errors = ($errors | append ($field.name + " contains disallowed characters: " + $field.val))
+      } else if ("/.." in ("/" + $field.val + "/")) {
+        $errors = ($errors | append ($field.name + " must not contain a '..' path component: " + $field.val))
+      }
+    }
+  }
+  let kurl = ($m.kernel?.artifact?.url? | default "")
+  if $kurl != "" and ($kurl =~ $shell_meta) {
+    $errors = ($errors | append ("kernel.artifact.url contains shell metacharacters: " + $kurl))
+  }
+  # boot.cmdline is passed to the guest kernel; spaces separate args, but no
+  # other shell metacharacters are allowed (it is rendered into a plan cmd).
+  let cmdline = ($m.boot?.cmdline? | default "")
+  if $cmdline != "" and not ($cmdline =~ '^[A-Za-z0-9 ._,:=/+-]+$') {
+    $errors = ($errors | append ("boot.cmdline contains disallowed characters: " + $cmdline))
+  }
+  for d in ($m.state_disks? | default [] | enumerate) {
+    let disk = $d.item
+    let idx = $d.index
+    let checks = [
+      {field: "name",       val: ($disk.name? | default ""),       re: '^[a-z0-9][a-z0-9_-]{0,31}$'}
+      {field: "label",      val: ($disk.label? | default ""),      re: '^[A-Za-z0-9_-]{1,16}$'}
+      {field: "device",     val: ($disk.device? | default ""),     re: '^[a-z0-9]{1,16}$'}
+      {field: "mountpoint", val: ($disk.mountpoint? | default ""), re: '^/[A-Za-z0-9._/-]*$'}
+      {field: "fs",         val: ($disk.fs? | default ""),         re: '^[a-z0-9]+$'}
+    ]
+    for c in $checks {
+      if $c.val != "" and not ($c.val =~ $c.re) {
+        $errors = ($errors | append $"state_disks[($idx)].($c.field) contains disallowed characters: ($c.val)")
+      }
+    }
+    let mp = ($disk.mountpoint? | default "")
+    if $mp != "" and ("/.." in ($mp + "/")) {
+      $errors = ($errors | append $"state_disks[($idx)].mountpoint must not contain '..': ($mp)")
+    }
+  }
+
   {ok: ($errors | is-empty), errors: $errors}
+}
+
+# ---------------------------------------------------------------------------
+# microvm_checks — profile=microvm semantic checks (validate checks 21-25).
+# Returns {checks: [..], errors: [..], warnings: [..]}. Pure; reads
+# catalog/statefs.v1.json for the filesystem x platform support matrix.
+# ---------------------------------------------------------------------------
+export def microvm_checks [m: record] {
+  mut checks = []
+  mut errors = []
+  mut warnings = []
+  let os = ($m.target?.os? | default "")
+  let arch = ($m.target?.arch? | default "")
+
+  # 21. microvm_boot_mode — direct-kernel PVH only
+  let mode = ($m.boot?.mode? | default "")
+  let mode_ok = ($mode == "direct-kernel")
+  $checks = ($checks | append {check: "microvm_boot_mode", pass: $mode_ok, detail: (if $mode_ok { "boot.mode=direct-kernel" } else { $"boot.mode must be direct-kernel for profile=microvm, got '($mode)'" })})
+  if not $mode_ok { $errors = ($errors | append $"microvm_boot_mode: boot.mode must be direct-kernel, got '($mode)'") }
+
+  # 22. microvm_kernel_artifact — a pre-built ELF with a resolvable source
+  let art = ($m.kernel?.artifact? | default {})
+  let atype = ($art.type? | default "")
+  let art_ok = (($atype == "local_path" and ($art.path? | default "") != "") or ($atype == "url" and ($art.url? | default "") != ""))
+  $checks = ($checks | append {check: "microvm_kernel_artifact", pass: $art_ok, detail: (if $art_ok { $"kernel.artifact type=($atype)" } else { "kernel.artifact needs type=local_path+path or type=url+url" })})
+  if not $art_ok { $errors = ($errors | append "microvm_kernel_artifact: kernel.artifact needs type=local_path with path, or type=url with url") }
+  let asha = ($art.sha256? | default "")
+  if $atype == "url" and $asha == "" {
+    $warnings = ($warnings | append "microvm_kernel_artifact_sha256: kernel.artifact.sha256 not pinned for a url source — the fetched ELF is hashed but not checked")
+  }
+  let fmt = ($m.image?.format? | default "")
+  if $fmt != "elf" {
+    $errors = ($errors | append $"microvm_image_format: image.format must be elf for profile=microvm, got '($fmt)'")
+    $checks = ($checks | append {check: "microvm_image_format", pass: false, detail: $"image.format=($fmt), expected elf"})
+  }
+
+  # 23. microvm_vmm_arch — qemu microvm machine is x86-only; firecracker is amd64/aarch64
+  let vmms = ($m.boot?.vmm? | default ["qemu-microvm"])
+  let bad_vmm = ($vmms | where { |v|
+    ($v == "qemu-microvm" and $arch != "amd64") or ($v == "firecracker" and $arch not-in ["amd64", "aarch64"]) or ($v not-in ["qemu-microvm", "firecracker"])
+  })
+  let vmm_ok = ($bad_vmm | is-empty)
+  $checks = ($checks | append {check: "microvm_vmm_arch", pass: $vmm_ok, detail: (if $vmm_ok { $"vmm=($vmms | str join ',') arch=($arch)" } else { $"vmm ($bad_vmm | str join ',') cannot boot arch=($arch)" })})
+  if not $vmm_ok { $errors = ($errors | append $"microvm_vmm_arch: ($bad_vmm | str join ',') cannot boot arch=($arch)") }
+
+  # 24. microvm_rootfs — embedded (no root disk) or a separate immutable image
+  let rtype = ($m.rootfs?.type? | default "embedded")
+  let rootfs_ok = ($rtype == "embedded") or ($rtype == "image" and ($m.rootfs?.path? | default "") != "")
+  $checks = ($checks | append {check: "microvm_rootfs", pass: $rootfs_ok, detail: (if $rootfs_ok { $"rootfs.type=($rtype)" } else { "rootfs.type=image requires rootfs.path" })})
+  if not $rootfs_ok { $errors = ($errors | append "microvm_rootfs: rootfs.type=image requires rootfs.path") }
+
+  # 25. state_disk_fs_platform — per-disk fs x target.os from catalog/statefs.v1.json
+  let cat = (open "catalog/statefs.v1.json")
+  let disks = ($m.state_disks? | default [])
+  let names = ($disks | each { |d| $d.name? | default "" })
+  if ($names | uniq | length) != ($names | length) {
+    $errors = ($errors | append "state_disks: disk names must be unique")
+    $checks = ($checks | append {check: "state_disk_names_unique", pass: false, detail: "duplicate state_disks[].name"})
+  }
+  for d in $disks {
+    let fs = ($d.fs? | default "")
+    let entry = ($cat.filesystems | where id == $fs)
+    let support = if ($entry | is-empty) { "unknown" } else { ($entry | first | get platforms | get -o $os | default {support: "unsupported"} | get support) }
+    let notes = if ($entry | is-empty) { "" } else { ($entry | first | get platforms | get -o $os | default {notes: ""} | get notes) }
+    let pass = ($support in ["supported", "experimental"])
+    $checks = ($checks | append {check: "state_disk_fs_platform", pass: $pass, disk: ($d.name? | default ""), detail: $"fs=($fs) os=($os) support=($support) ($notes)"})
+    if not $pass { $errors = ($errors | append $"state_disk_fs_platform: state disk '($d.name? | default "")' fs=($fs) is ($support) on ($os): ($notes)") }
+    if $support == "experimental" { $warnings = ($warnings | append $"state_disk_fs_platform: state disk '($d.name? | default "")' fs=($fs) is experimental on ($os): ($notes)") }
+  }
+
+  {checks: $checks, errors: $errors, warnings: $warnings}
 }
 
 def "main validate" [manifest_file: string] {
@@ -113,7 +230,9 @@ def "main validate" [manifest_file: string] {
   let has_image  = ("image"  in $m)
   let has_target = ("target" in $m)
   let has_kernel = ("kernel" in $m)
-  let has_agent  = ("agent"  in $m)
+  let is_microvm = (($m.profile? | default "uefi") == "microvm")
+  # microvm images need not embed an agent (smolfire one-ELF has none).
+  let has_agent  = ("agent"  in $m) or $is_microvm
   let req_ok = ($has_image and $has_target and $has_kernel and $has_agent)
   let missing_fields = (
     []
@@ -125,7 +244,7 @@ def "main validate" [manifest_file: string] {
   $checks = ($checks | append {
     check: "required_fields"
     pass: $req_ok
-    detail: (if $req_ok { "image, target, kernel, agent present" } else { $"missing: ($missing_fields | str join ', ')" })
+    detail: (if $req_ok { (if $is_microvm { "image, target, kernel present (agent optional for microvm)" } else { "image, target, kernel, agent present" }) } else { $"missing: ($missing_fields | str join ', ')" })
   })
   if not $req_ok { $errors = ($errors | append $"required_fields missing: ($missing_fields | str join ', ')") }
 
@@ -136,7 +255,7 @@ def "main validate" [manifest_file: string] {
   if not $slug_ok { $errors = ($errors | append $"image_name_slug: '($img_name)' is not a valid slug") }
 
   # 5. image_format
-  let valid_formats = ["raw", "qcow2", "vmdk"]
+  let valid_formats = if $is_microvm { ["elf"] } else { ["raw", "qcow2", "vmdk"] }
   let img_fmt = ($m.image?.format? | default "")
   let fmt_ok = ($img_fmt in $valid_formats)
   $checks = ($checks | append {check: "image_format", pass: $fmt_ok, detail: (if $fmt_ok { $img_fmt } else { $"'($img_fmt)' not in ($valid_formats | str join ', ')" })})
@@ -181,12 +300,15 @@ def "main validate" [manifest_file: string] {
   $checks = ($checks | append {check: "profile_supported", pass: $profile_ok, detail: (if $profile_ok { $"($profile) profile file exists" } else { $"($profile_file) not found" })})
   if not $profile_ok { $errors = ($errors | append $"profile_supported: ($profile_file) does not exist") }
 
-  # 10. agent_source_type
+  # 10. agent_source_type (skipped for a microvm manifest with no agent)
+  let agent_checks = ("agent" in $m) or (not $is_microvm)
+  if $agent_checks {
   let valid_src_types = ["gitea_release", "url", "local_path"]
   let src_type = ($m.agent?.source?.type? | default "")
   let src_type_ok = ($src_type in $valid_src_types)
   $checks = ($checks | append {check: "agent_source_type", pass: $src_type_ok, detail: (if $src_type_ok { $"type=($src_type)" } else { $"'($src_type)' not in [($valid_src_types | str join ', ')]" })})
   if not $src_type_ok { $errors = ($errors | append $"agent_source_type: '($src_type)' not in [($valid_src_types | str join ', ')]") }
+  }
 
   # 11. agent_sha256_real
   let sha256 = ($m.agent?.source?.sha256? | default "")
@@ -204,17 +326,22 @@ def "main validate" [manifest_file: string] {
   }
 
   # 12. agent_version_semver
+  if $agent_checks {
   let agent_ver = ($m.agent?.version? | default "")
   let semver_ok = ($agent_ver =~ '^v[0-9]+\.[0-9]+\.[0-9]+')
   $checks = ($checks | append {check: "agent_version_semver", pass: $semver_ok, detail: (if $semver_ok { $agent_ver } else { $"'($agent_ver)' does not match ^v[0-9]+\\.[0-9]+\\.[0-9]+" })})
   if not $semver_ok { $errors = ($errors | append $"agent_version_semver: '($agent_ver)' does not match semver") }
+  }
 
-  # 13. image_size_minimum — size_mb must be >= 512
+  # 13. image_size_minimum — size_mb must be >= 512 (disk images only; a
+  # microvm ELF has no provisioned disk size)
+  if not $is_microvm {
   let size_mb = ($m.image?.size_mb? | default 0)
   let size_ok = $size_mb >= 512
   let size_detail = $"($size_mb) MB \(min 512\)"
   $checks = ($checks | append {check: "image_size_minimum", pass: $size_ok, detail: $size_detail})
   if not $size_ok { $errors = ($errors | append $"image_size_minimum: ($size_mb) MB is below minimum 512 MB") }
+  }
 
   # 14. agent_sha256_not_placeholder — warn (not error) if sha256 is all-zeros or all-ones when source is url or gitea_release
   let sha256_src_type = ($m.agent?.source?.type? | default "")
@@ -350,6 +477,20 @@ except jsonschema.ValidationError as e:
     {check: "jsonschema_draft7" pass: true detail: $"skipped: ($e.msg)"}
   }
   $checks = ($checks | append $check_jsonschema)
+  # Legacy profiles keep jsonschema advisory (existing examples predate some
+  # schema fields). microvm is new, so the schema is binding for it.
+  if $is_microvm and not $check_jsonschema.pass { $errors = ($errors | append $"jsonschema_draft7: ($check_jsonschema.detail)") }
+
+  # 21-25. microvm profile checks + the shared injection guard
+  if $is_microvm {
+    let mv = (microvm_checks $m)
+    $checks = ($checks | append $mv.checks)
+    $errors = ($errors | append $mv.errors)
+    $warnings = ($warnings | append $mv.warnings)
+  }
+  let safety = (manifest_safety_check $m)
+  $checks = ($checks | append {check: "manifest_safety", pass: $safety.ok, detail: (if $safety.ok { "no shell-injection vectors" } else { $safety.errors | str join "; " })})
+  if not $safety.ok { $errors = ($errors | append $safety.errors) }
 
   {
     action: "validate"
@@ -504,6 +645,23 @@ def "main verify" [receipt_file: string, --image: string = ""] {
   let id_detail = if $id_ok { $"receipt_id ($receipt_id)" } else if $receipt_id == "" { "receipt_id is empty" } else { "receipt_id is all-zeros placeholder" }
   $checks = ($checks | append {check: "receipt_id_present", pass: $id_ok, detail: $id_detail})
   if not $id_ok { $errors = ($errors | append $id_detail) }
+
+  # 7. state_disk_sha256 (microvm receipts) — each state disk is verified
+  # independently of the boot artifact; unbuilt disks (sha256=null) are skipped.
+  for d in ($r.state_disks? | default []) {
+    let want = ($d.sha256? | default "")
+    let dpath = ($d.path? | default "")
+    let c = if not ($want =~ '^[0-9a-f]{64}$') {
+      {check: "state_disk_sha256", disk: ($d.name? | default ""), pass: false, skipped: true, detail: $"state disk not built \(action=($d.action? | default 'unknown'))"}
+    } else if not ($dpath | path exists) {
+      {check: "state_disk_sha256", disk: ($d.name? | default ""), pass: false, detail: $"state disk image not found: ($dpath)"}
+    } else {
+      let got = (sha256_file $dpath)
+      {check: "state_disk_sha256", disk: ($d.name? | default ""), pass: ($got == $want), detail: (if $got == $want { "sha256 matches receipt" } else { $"MISMATCH: got ($got) expected ($want)" })}
+    }
+    $checks = ($checks | append $c)
+    if (not $c.pass) and (($c.skipped? | default false) != true) { $errors = ($errors | append $"state disk ($c.disk): ($c.detail)") }
+  }
 
   let valid = ($checks | where { |c| ($c.skipped? | default false) != true } | where pass == false | length) == 0
   {

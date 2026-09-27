@@ -12,6 +12,8 @@
 | `profiles/uefi.nu` | UEFI build profile (GPT + FAT16 ESP 128MB + UFS2 root); real execution on FreeBSD only |
 | `profiles/kboot.nu` | kboot build profile (GRUB2 + ext4); real execution on Linux only |
 | `profiles/netbsd.nu` | NetBSD stub profile — dry-run plan only |
+| `profiles/microvm.nu` | Direct-kernel PVH profile: pre-built kernel ELF + independently hashed state disks (FFS/LFS/HAMMER2); issue #1 |
+| `catalog/statefs.v1.json` | State filesystem x target OS support matrix used by `validate` for microvm |
 | `adapters/vultr.nu` | Vultr deployment adapter (snapshot-url import) |
 | `adapters/linode.nu` | Linode adapter (rescue-dd plan with detailed steps) |
 | `adapters/aws.nu` | AWS EC2 adapter stub |

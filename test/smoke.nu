@@ -34,6 +34,51 @@ def genoa [cmd: string] {
   ^nu -c $script | from json
 }
 
+
+# ---------------------------------------------------------------------------
+# microvm fixtures (genoa #1) — a throwaway dir with a fake PVH "ELF" (just
+# the ELF magic + padding) and a manifest derived from the smolfire example.
+# ---------------------------------------------------------------------------
+def microvm_fixture [--state-fs: string = "", --pin: string = "", --not-elf] {
+  let dir = (^mktemp -d | str trim)
+  let kernel = $"($dir)/kernel.elf"
+  let bytes = if $not_elf { 0x[23 21 2f 62 69 6e 2f 73 68 0a] } else { 0x[7f 45 4c 46 02 01 01 00] | bytes add --end (1..56 | each { 0x[00] } | bytes collect) }
+  $bytes | save --raw --force $kernel
+  let base = (open examples/freebsd-smolfire-microvm-amd64.toml)
+  let art = ({type: "local_path", path: $kernel, version: "15.0-RELEASE SMOLFIRE"} | if $pin != "" { merge {sha256: $pin} } else { $in })
+  let m = ($base
+    | upsert image.output_dir $dir
+    | upsert kernel.artifact $art
+    | upsert state_disks (if $state_fs == "" { [] } else { [{name: "state", fs: $state_fs, size_mb: 16, label: "bopstate", mountpoint: "/state"}] }))
+  let mpath = $"($dir)/manifest.toml"
+  $m | to toml | save --force $mpath
+  {dir: $dir, kernel: $kernel, manifest: $mpath}
+}
+
+# Write a variant of the smolfire microvm example with `patch` applied.
+def microvm_variant [patch: closure] {
+  let dir = (^mktemp -d | str trim)
+  let mpath = $"($dir)/variant.toml"
+  open examples/freebsd-smolfire-microvm-amd64.toml | do $patch | to toml | save --force $mpath
+  $mpath
+}
+
+# Validate a receipt against schema/receipt.v1.json (Draft 2020-12). Returns
+# "valid", "skipped-no-jsonschema" or the first error message.
+def receipt_schema_check [receipt_path: string] {
+  let py = "
+import json, sys
+try:
+    from jsonschema import Draft202012Validator
+except ImportError:
+    print('skipped-no-jsonschema'); sys.exit(0)
+v = Draft202012Validator(json.load(open('schema/receipt.v1.json')))
+errs = sorted(v.iter_errors(json.load(open(sys.argv[1]))), key=lambda e: list(e.path))
+print('valid' if not errs else f'invalid: {list(errs[0].path)} {errs[0].message}')
+"
+  ^python3 -c $py $receipt_path | str trim
+}
+
 # ---------------------------------------------------------------------------
 # Test cases
 # ---------------------------------------------------------------------------
@@ -809,6 +854,152 @@ provider = \"vultr\"
       error make {msg: $"expected os_version format error, got: ($errs)"}
     }
     $"action=($action)"
+  })
+
+  # ── microvm profile (genoa #1) ─────────────────────────────────────────
+
+  # microvm_examples_valid — both issue-#1 acceptance manifests validate
+  (run_test "microvm_examples_valid" {
+    let a = (^nu genoa.nu validate examples/freebsd-smolfire-microvm-amd64.toml | from json)
+    let b = (^nu genoa.nu validate examples/netbsd11-microvm-amd64.toml | from json)
+    if not ($a.valid and $b.valid) {
+      error make {msg: $"expected both valid; freebsd=($a.errors | str join ';') netbsd=($b.errors | str join ';')"}
+    }
+    let fs_checks = ($b.checks | where check == "state_disk_fs_platform" | length)
+    if $fs_checks != 1 { error make {msg: $"expected 1 state_disk_fs_platform check, got ($fs_checks)"} }
+    "freebsd+netbsd microvm valid"
+  })
+
+  # microvm_rejects_unsupported_statefs — LFS and HAMMER1 are not FreeBSD filesystems
+  (run_test "microvm_rejects_unsupported_statefs" {
+    let lfs = (microvm_variant { upsert state_disks [{name: "state", fs: "lfs", size_mb: 64}] })
+    let h1 = (microvm_variant { upsert state_disks [{name: "state", fs: "hammer1", size_mb: 64}] })
+    let r1 = (^nu genoa.nu validate $lfs | from json)
+    let r2 = (^nu genoa.nu validate $h1 | from json)
+    if $r1.valid or $r2.valid { error make {msg: "expected lfs/hammer1 on freebsd to be invalid"} }
+    if not ($r2.errors | str join ";" | str contains "DragonFly") { error make {msg: $"expected DragonFly-only reason, got ($r2.errors)"} }
+    "lfs+hammer1 rejected on freebsd"
+  })
+
+  # microvm_hammer2_experimental_warns — experimental fs passes with a warning
+  (run_test "microvm_hammer2_experimental_warns" {
+    let m = (microvm_variant { upsert state_disks [{name: "state", fs: "hammer2", size_mb: 64, label: "DATA"}] })
+    let r = (^nu genoa.nu validate $m | from json)
+    if not $r.valid { error make {msg: $"expected valid, got ($r.errors)"} }
+    if not ($r.warnings | str join ";" | str contains "experimental") { error make {msg: "expected experimental warning"} }
+    "hammer2 valid+warning"
+  })
+
+  # microvm_rejects_bad_shape — wrong format, wrong vmm/arch, injected disk name
+  (run_test "microvm_rejects_bad_shape" {
+    let fmt = (^nu genoa.nu validate (microvm_variant { upsert image.format "raw" }) | from json)
+    let vmm = (^nu genoa.nu validate (microvm_variant { upsert target.arch "aarch64" | upsert boot.vmm ["qemu-microvm"] }) | from json)
+    let inj = (^nu genoa.nu validate (microvm_variant { upsert state_disks [{name: "x;rm -rf /", fs: "ffs", size_mb: 64}] }) | from json)
+    let bad = ([$fmt $vmm $inj] | where valid == true | length)
+    if $bad > 0 { error make {msg: $"expected all three invalid; valid count=($bad)"} }
+    if not ($inj.errors | str join ";" | str contains "state_disks[0].name") { error make {msg: $"expected injection error, got ($inj.errors)"} }
+    "format/vmm/injection rejected"
+  })
+
+  # microvm_build_dry — plan shape: direct-kernel, no root disk, launch plans, run_id
+  (run_test "microvm_build_dry" {
+    let rec = (^nu genoa.nu build examples/freebsd-smolfire-microvm-amd64.toml --dry-run --run-id bop-card-7 | from json)
+    if $rec.profile != "microvm" or $rec.action != "planned" { error make {msg: $"expected microvm/planned got ($rec.profile)/($rec.action)"} }
+    if $rec.boot.root_disk != false { error make {msg: "expected root_disk=false"} }
+    if ($rec.launch.qemu_microvm | where { |a| $a == "microvm" } | is-empty) { error make {msg: "qemu argv lacks -M microvm"} }
+    if ($rec.launch.firecracker."boot-source".kernel_image_path | str ends-with ".elf") != true { error make {msg: "firecracker kernel_image_path"} }
+    let r = (open $rec.receipt_path)
+    if $r.correlation.run_id != "bop-card-7" { error make {msg: $"run_id not recorded: ($r.correlation)"} }
+    if ($r.state_disks | length) != 1 { error make {msg: "expected 1 state disk in receipt"} }
+    $"steps=($rec.steps | length)"
+  })
+
+  # microvm_build_profile_flag_ignored — --profile uefi cannot rebuild a microvm manifest as uefi
+  (run_test "microvm_build_profile_flag_ignored" {
+    let rec = (^nu genoa.nu build examples/netbsd11-microvm-amd64.toml --profile uefi --dry-run | from json)
+    if $rec.profile != "microvm" { error make {msg: $"expected microvm got ($rec.profile)"} }
+    "profile=microvm"
+  })
+
+  # microvm_run_id_rejects_bad — run ids are identifiers, not free text
+  (run_test "microvm_run_id_rejects_bad" {
+    let rec = (^nu genoa.nu build examples/freebsd-smolfire-microvm-amd64.toml --dry-run --run-id "a b;c" | from json)
+    if $rec.action != "failed" { error make {msg: $"expected failed got ($rec.action)"} }
+    "action=failed"
+  })
+
+  # microvm_receipt_schema — dry-run microvm and uefi receipts conform to receipt.v1.json
+  (run_test "microvm_receipt_schema" {
+    let mv = (^nu genoa.nu build examples/netbsd11-microvm-amd64.toml --dry-run | from json)
+    let uf = (^nu genoa.nu build examples/freebsd-vultr-aarch64.toml --dry-run | from json)
+    let a = (receipt_schema_check $mv.receipt_path)
+    let b = (receipt_schema_check $uf.receipt_path)
+    if $a not-in ["valid", "skipped-no-jsonschema"] { error make {msg: $"microvm receipt: ($a)"} }
+    if $b not-in ["valid", "skipped-no-jsonschema"] { error make {msg: $"uefi receipt: ($b)"} }
+    $"microvm=($a) uefi=($b)"
+  })
+
+  # microvm_build_real_elf — real (non-dry) build of a fixture ELF on ANY host:
+  # copied, ELF-checked, pinned hash honoured, receipt verifies
+  (run_test "microvm_build_real_elf" {
+    let probe = (microvm_fixture)
+    let sha = (open --raw $probe.kernel | hash sha256)
+    let fx = (microvm_fixture --pin $sha)
+    # fixture bytes are identical, so the pin from the probe applies
+    let rec = (^nu genoa.nu build $fx.manifest --run-id run-1 | from json)
+    if $rec.action != "built" { error make {msg: $"expected built got ($rec.action): ($rec.error? | default '')"} }
+    let r = (open $rec.receipt_path)
+    if $r.hashes.image_sha256 != $sha { error make {msg: $"receipt image_sha256 ($r.hashes.image_sha256) != ($sha)"} }
+    if not ($"($fx.dir)/smolfire-microvm-amd64-v0.1.0.firecracker.json" | path exists) { error make {msg: "firecracker config not written"} }
+    let v = (^nu genoa.nu verify $rec.receipt_path | from json)
+    if not $v.valid { error make {msg: $"verify failed: ($v.errors)"} }
+    let s = (receipt_schema_check $rec.receipt_path)
+    if $s not-in ["valid", "skipped-no-jsonschema"] { error make {msg: $"schema: ($s)"} }
+    ^rm -rf $fx.dir $probe.dir
+    $"built sha=($sha | str substring 0..11)"
+  })
+
+  # microvm_build_rejects_bad_artifact — pin mismatch and non-ELF both fail closed
+  (run_test "microvm_build_rejects_bad_artifact" {
+    let fx1 = (microvm_fixture --pin ("" | fill --character "a" --width 64))
+    let fx2 = (microvm_fixture --not-elf)
+    let r1 = (^nu genoa.nu build $fx1.manifest | from json)
+    let r2 = (^nu genoa.nu build $fx2.manifest | from json)
+    ^rm -rf $fx1.dir $fx2.dir
+    if $r1.action != "build-failed" or $r1.failed_step != "verify_boot_artifact" { error make {msg: $"pin mismatch: ($r1.action)/($r1.failed_step? | default '')"} }
+    if $r2.action != "build-failed" { error make {msg: $"non-elf: ($r2.action)"} }
+    "pin-mismatch+non-elf rejected"
+  })
+
+  # microvm_state_disk_real — FFS state disk: built+hashed where makefs exists
+  # (FreeBSD/NetBSD), otherwise fails closed as requires-host with NO hash
+  (run_test "microvm_state_disk_real" {
+    let fx = (microvm_fixture --state-fs ffs)
+    let rec = (^nu genoa.nu build $fx.manifest | from json)
+    let host = (^uname -s | str trim)
+    let can = ($host in ["FreeBSD", "NetBSD"]) and ((which makefs | length) > 0)
+    let disk = ($rec.state_disks | first)
+    let out = if $can {
+      if $rec.action != "built" or not ($disk.sha256 =~ '^[0-9a-f]{64}$') { error make {msg: $"expected built disk, got ($rec.action) ($disk)"} }
+      let v = (^nu genoa.nu verify $rec.receipt_path | from json)
+      if ($v.checks | where check == "state_disk_sha256" | where pass == true | is-empty) { error make {msg: "state disk sha not verified"} }
+      $"built ffs sha=($disk.sha256 | str substring 0..11)"
+    } else {
+      if $rec.action != "build-failed" or $disk.action != "requires-host" or $disk.sha256 != null { error make {msg: $"expected requires-host/null sha, got ($rec.action) ($disk.action) ($disk.sha256)"} }
+      $"requires-host on ($host)"
+    }
+    ^rm -rf $fx.dir
+    $out
+  })
+
+  # microvm_deploy_gate — cloud providers refused; local deploy returns the launch plan
+  (run_test "microvm_deploy_gate" {
+    let _b = (^nu genoa.nu build examples/freebsd-smolfire-microvm-amd64.toml --dry-run | from json)
+    let cloud = (^nu genoa.nu deploy examples/freebsd-smolfire-microvm-amd64.toml --provider vultr --dry-run | from json)
+    let local = (^nu genoa.nu deploy examples/freebsd-smolfire-microvm-amd64.toml --dry-run | from json)
+    if $cloud.action != "failed" { error make {msg: $"expected cloud deploy failed, got ($cloud.action)"} }
+    if $local.action != "would-run" or ($local.qemu_microvm | is-empty) { error make {msg: $"expected launch plan, got ($local.action)"} }
+    "cloud=failed local=would-run"
   })
 
 ]

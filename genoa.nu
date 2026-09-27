@@ -5,6 +5,7 @@ source lib/tools.nu
 source profiles/uefi.nu
 source profiles/kboot.nu
 source profiles/netbsd.nu
+source profiles/microvm.nu
 source adapters/linode.nu
 source adapters/vultr.nu
 source adapters/aws.nu
@@ -77,6 +78,13 @@ def "main describe" [manifest_file: string] {
       mode:      ($m.network?.mode?      | default "dhcp")
       interface: ($m.network?.interface? | default "vtnet0")
     }
+    boot: (if ($m.boot? | default null) == null { null } else {
+      mode:      ($m.boot?.mode?     | default "")
+      vmm:       ($m.boot?.vmm?      | default [])
+      artifact:  ($m.kernel?.artifact? | default null)
+      rootfs:    ($m.rootfs?.type?   | default "embedded")
+    })
+    state_disks: ($m.state_disks? | default [] | each { |d| {name: $d.name?, fs: $d.fs?, size_mb: $d.size_mb?, label: ($d.label? | default null)} })
     profile:        ($m.profile?          | default "uefi")
     provider:       ($m.deploy?.provider? | default "")
     signing:        ($m.signing?.tool?    | default "none")
@@ -151,6 +159,7 @@ def "main run" [
   --dry-run
   --backend: string = "gitea"
   --provider: string = ""
+  --run-id: string = ""   # logical run identity passed to build (receipt.correlation.run_id)
 ] {
   # Resolve profile and provider from manifest if not specified via flags
   let m = if ($manifest_file | path exists) { open $manifest_file } else { {} }
@@ -182,7 +191,8 @@ def "main run" [
 
   # Stage 2: build
   let b_result = try {
-    ^nu genoa.nu build $manifest_file --profile $p ...$dry_flags | from json
+    let run_flags = if $run_id != "" { ["--run-id", $run_id] } else { [] }
+    ^nu genoa.nu build $manifest_file --profile $p ...$dry_flags ...$run_flags | from json
   } catch { |e|
     {action: "failed", error: $"build subprocess failed: ($e.msg)"}
   }
@@ -282,7 +292,7 @@ def main [] {
   print ""
   print "Validation & Build:"
   print "  validate          Validate a manifest (20 checks + JSON Schema)"
-  print "  build             Build a cloud image (--profile uefi|kboot|netbsd, --dry-run)"
+  print "  build             Build a cloud image (--profile uefi|kboot|netbsd|microvm, --dry-run, --run-id)"
   print "  suggest           AI-powered manifest generation from natural language (--model, --dry-run)"
   print "  run               Full validate→build→publish→deploy pipeline"
   print ""

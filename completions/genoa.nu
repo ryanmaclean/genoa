@@ -11,7 +11,7 @@ def "nu-complete genoa manifests" [] {
 
 # Complete profile names
 def "nu-complete genoa profiles" [] {
-  ["uefi" "kboot" "netbsd"]
+  ["uefi" "kboot" "netbsd" "microvm"]
 }
 
 # Complete provider IDs
@@ -44,6 +44,7 @@ extern "nu genoa.nu build" [
   manifest_file: string@"nu-complete genoa manifests"
   --profile: string@"nu-complete genoa profiles"
   --dry-run
+  --run-id: string
 ]
 
 extern "nu genoa.nu run" [
@@ -52,6 +53,7 @@ extern "nu genoa.nu run" [
   --dry-run
   --backend: string@"nu-complete genoa backends"
   --provider: string@"nu-complete genoa providers"
+  --run-id: string
 ]
 
 extern "nu genoa.nu deploy" [

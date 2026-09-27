@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/ryanmaclean/genoa/schema/receipt.v1.json",
   "title": "genoa receipt",
-  "description": "v1 attestation envelope emitted by `genoa build`. Every image ships with a co-located receipt. Consumers: fleet-eval, verify subcommand, any downstream pipeline.",
-  "version": "1.0.0",
+  "description": "v1 attestation envelope emitted by `genoa build`. Every image ships with a co-located receipt. Consumers: fleet-eval, verify subcommand, any downstream pipeline. 1.1.0 (additive): microvm boot/state_disks/launch sections, correlation, and the fields genoa build already emits (build.profile, hashes.manifest_path, signing.action, genoa-* builder types, hash sentinels).",
+  "version": "1.1.0",
   "type": "object",
   "required": ["schema_version", "receipt_id", "built_at", "image", "build", "agent", "hashes", "claims"],
   "additionalProperties": false,
@@ -29,21 +29,12 @@
       "required": ["name", "version", "format", "output_path"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "version": { "type": "string" },
-        "format": { "type": "string", "enum": ["qcow2", "raw", "vmdk"] },
-        "output_path": {
-          "type": "string",
-          "description": "Absolute path to the image file on the build host at build time."
-        },
-        "size_bytes": {
-          "type": "integer",
-          "description": "Actual byte size of the image file on disk."
-        },
-        "provisioned_mb": {
-          "type": "integer",
-          "description": "Provisioned image size in MiB (virtual disk size)."
-        }
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "format": {"type": "string", "enum": ["qcow2", "raw", "vmdk", "elf"]},
+        "output_path": {"type": "string", "description": "Absolute path to the image file on the build host at build time."},
+        "size_bytes": {"type": "integer", "description": "Actual byte size of the image file on disk."},
+        "provisioned_mb": {"type": "integer", "description": "Provisioned image size in MiB (virtual disk size)."}
       }
     },
     "build": {
@@ -52,35 +43,27 @@
       "required": ["host", "builder_type", "os_version", "arch", "genoa_version"],
       "additionalProperties": false,
       "properties": {
-        "host": {
-          "type": "string",
-          "description": "Hostname of the machine that ran the build."
-        },
+        "host": {"type": "string", "description": "Hostname of the machine that ran the build."},
         "builder_type": {
           "type": "string",
-          "enum": ["local", "fb-vm-24", "fb13-vm", "fb14-vm", "native-fleet-pi", "zig-cc", "dry-run"],
+          "enum": [
+            "local",
+            "fb-vm-24",
+            "fb13-vm",
+            "fb14-vm",
+            "native-fleet-pi",
+            "zig-cc",
+            "dry-run",
+            "genoa-local",
+            "genoa-crosshost"
+          ],
           "description": "Build environment type. 'dry-run' when no actual build occurred."
         },
-        "os_version": {
-          "type": "string",
-          "description": "OS version on the build host. Example: 'FreeBSD 15.0-RELEASE'."
-        },
-        "arch": {
-          "type": "string",
-          "description": "CPU architecture of the build host. Example: 'aarch64'."
-        },
-        "genoa_version": {
-          "type": "string",
-          "description": "Version of the genoa CLI that produced this receipt."
-        },
-        "kernel_config": {
-          "type": "string",
-          "description": "Kernel KERNCONF used. Example: 'SMOLBSD'."
-        },
-        "platform": {
-          "type": "string",
-          "description": "Target platform. Example: 'rpi5', 'qemu'."
-        },
+        "os_version": {"type": "string", "description": "OS version on the build host. Example: 'FreeBSD 15.0-RELEASE'."},
+        "arch": {"type": "string", "description": "CPU architecture of the build host. Example: 'aarch64'."},
+        "genoa_version": {"type": "string", "description": "Version of the genoa CLI that produced this receipt."},
+        "kernel_config": {"type": "string", "description": "Kernel KERNCONF used. Example: 'SMOLBSD'."},
+        "platform": {"type": "string", "description": "Target platform. Example: 'rpi5', 'qemu'."},
         "dry_run": {
           "type": "boolean",
           "default": false,
@@ -94,15 +77,17 @@
             "required": ["step", "cmd"],
             "additionalProperties": false,
             "properties": {
-              "step": { "type": "integer" },
-              "label": { "type": "string" },
-              "cmd": { "type": "string" },
-              "would_run": {
-                "type": "boolean",
-                "description": "True in dry-run mode: command would be executed but was not."
-              }
+              "step": {"type": "integer"},
+              "label": {"type": "string"},
+              "cmd": {"type": "string"},
+              "would_run": {"type": "boolean", "description": "True in dry-run mode: command would be executed but was not."}
             }
           }
+        },
+        "profile": {
+          "type": "string",
+          "enum": ["uefi", "kboot", "netbsd", "microvm"],
+          "description": "Build profile that produced the artifact."
         }
       }
     },
@@ -112,16 +97,16 @@
       "required": ["name", "version", "install_path"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "version": { "type": "string" },
-        "install_path": { "type": "string" },
-        "source_url": { "type": "string", "format": "uri" },
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "install_path": {"type": "string"},
+        "source_url": {"type": "string", "format": "uri"},
         "source_sha256": {
           "type": "string",
           "pattern": "^[a-fA-F0-9]{64}$",
           "description": "SHA-256 of the fetched agent binary before installation."
         },
-        "rc_service": { "type": "string", "description": "rc.d service name, if configured." }
+        "rc_service": {"type": "string", "description": "rc.d service name, if configured."}
       }
     },
     "hashes": {
@@ -132,12 +117,12 @@
       "properties": {
         "image_sha256": {
           "type": "string",
-          "pattern": "^[a-fA-F0-9]{64}$",
-          "description": "SHA-256 of the output image file. Use 'PLACEHOLDER_DRY_RUN' when dry_run=true."
+          "pattern": "^([a-fA-F0-9]{64}|PLACEHOLDER_DRY_RUN|HASH_COMPUTATION_FAILED)$",
+          "description": "SHA-256 of the output artifact (disk image, or the kernel ELF for profile=microvm). 'PLACEHOLDER_DRY_RUN' when not computed; 'HASH_COMPUTATION_FAILED' when hashing was attempted and failed."
         },
         "manifest_sha256": {
           "type": "string",
-          "pattern": "^([a-fA-F0-9]{64}|PLACEHOLDER_DRY_RUN)$",
+          "pattern": "^([a-fA-F0-9]{64}|PLACEHOLDER_DRY_RUN|HASH_COMPUTATION_FAILED)$",
           "description": "SHA-256 of the input manifest TOML file as-read."
         },
         "kernel_config_sha256": {
@@ -149,7 +134,8 @@
           "type": "string",
           "pattern": "^([a-fA-F0-9]{64}|PLACEHOLDER_DRY_RUN)$",
           "description": "SHA-256 of the release conf (smolbsd-qemu.conf) injected into the build."
-        }
+        },
+        "manifest_path": {"type": "string", "description": "Path of the manifest as passed to genoa build."}
       }
     },
     "signing": {
@@ -157,13 +143,21 @@
       "description": "Signing information. Present only when signing.tool != 'none'.",
       "additionalProperties": false,
       "properties": {
-        "tool": { "type": "string", "enum": ["signify"] },
-        "public_key": { "type": "string", "description": "Base64-encoded signify public key." },
-        "signature": { "type": "string", "description": "Base64-encoded signify signature over image_sha256." },
+        "tool": {"type": "string", "enum": ["signify", "minisign", "none"]},
+        "public_key": {"type": "string", "description": "Base64-encoded signify public key."},
+        "signature": {"type": "string", "description": "Base64-encoded signify signature over image_sha256."},
         "placeholder": {
           "type": "boolean",
           "description": "If true, signing was not actually performed (stub mode). Never trust a placeholder signature."
-        }
+        },
+        "action": {"type": "string", "description": "would-sign | signed | unsigned | failed"},
+        "sig_file": {"type": "string", "description": "Detached signature path."},
+        "public_key_file": {"type": "string", "description": "Public key path recorded for verification."},
+        "key_file": {"type": "string", "description": "Secret key path used (dry-run plan only)."},
+        "image": {"type": "string", "description": "Image path the signature covers."},
+        "step": {"type": "string", "description": "Failing step name when action=failed."},
+        "error": {"type": "string", "description": "Error message when action=failed."},
+        "stderr": {"type": "string", "description": "Signer stderr when action=failed."}
       }
     },
     "claims": {
@@ -174,14 +168,14 @@
         "required": ["claim", "executor", "probe", "expect", "status"],
         "additionalProperties": false,
         "properties": {
-          "claim": { "type": "string", "description": "Human-readable statement of what is asserted." },
+          "claim": {"type": "string", "description": "Human-readable statement of what is asserted."},
           "executor": {
             "type": "string",
             "enum": ["nu", "sh"],
             "description": "Runtime to use when evaluating the probe. 'nu' = Nushell (nu -c), 'sh' = POSIX shell (sh -c)."
           },
-          "probe": { "type": "string", "description": "Command to verify the claim. Evaluate with the declared executor." },
-          "expect": { "type": "string", "description": "Expected output / exit condition." },
+          "probe": {"type": "string", "description": "Command to verify the claim. Evaluate with the declared executor."},
+          "expect": {"type": "string", "description": "Expected output / exit condition."},
           "status": {
             "type": "string",
             "enum": ["verified", "unverified", "asserted", "skipped", "failed"],
@@ -200,14 +194,8 @@
       "description": "Populated by `genoa run` after a successful publish step. Absent if image was not published.",
       "additionalProperties": false,
       "properties": {
-        "url": {
-          "type": "string",
-          "description": "Public URL where the image was uploaded (e.g. an R2 or S3 object URL)."
-        },
-        "backend": {
-          "type": "string",
-          "description": "Publish backend used. Example: 'r2', 's3', 'stub'."
-        },
+        "url": {"type": "string", "description": "Public URL where the image was uploaded (e.g. an R2 or S3 object URL)."},
+        "backend": {"type": "string", "description": "Publish backend used. Example: 'r2', 's3', 'stub'."},
         "published_at": {
           "type": "string",
           "format": "date-time",
@@ -218,7 +206,102 @@
     "metadata": {
       "type": "object",
       "description": "Pass-through metadata from the manifest.",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {"type": "string"}
+    },
+    "correlation": {
+      "type": "object",
+      "description": "Immutable identity tuple for joining this artifact to a run (C2: identity, content hash and ordering stay distinct). genoa records the logical run id it was given and content hashes; it never mints an ordering/version counter — filesystem-native versions (HAMMER TID, LFS checkpoint) belong to the filesystem.",
+      "required": ["run_id", "manifest_sha256", "artifact_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "description": "Logical run identity from `genoa build --run-id` (e.g. a BOP card/run id); null when not supplied."
+        },
+        "manifest_sha256": {"type": "string"},
+        "artifact_sha256": {"type": "string"}
+      }
+    },
+    "boot": {
+      "type": ["object", "null"],
+      "description": "profile=microvm: direct-kernel boot contract and boot-artifact identity.",
+      "required": ["mode", "protocol", "vmm", "root_disk", "artifact_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"type": "string", "enum": ["direct-kernel"]},
+        "protocol": {"type": "string", "enum": ["pvh"]},
+        "vmm": {"type": "array", "items": {"type": "string", "enum": ["firecracker", "qemu-microvm"]}},
+        "cmdline": {"type": "string"},
+        "memory_mb": {"type": "integer"},
+        "vcpus": {"type": "integer"},
+        "ready_marker": {"type": ["string", "null"]},
+        "root_disk": {
+          "type": "boolean",
+          "description": "False: the boot artifact needs no root disk (root embedded in the ELF or supplied as an immutable initrd)."
+        },
+        "kernel_config": {"type": "string"},
+        "kernel_version": {"type": ["string", "null"]},
+        "artifact_source": {"type": "string"},
+        "artifact_sha256": {"type": "string", "pattern": "^([a-f0-9]{64}|PLACEHOLDER_DRY_RUN)$"},
+        "artifact_size_bytes": {"type": ["integer", "null"]},
+        "rootfs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {"type": "string", "enum": ["embedded", "image"]},
+            "path": {"type": ["string", "null"]},
+            "sha256": {"type": ["string", "null"], "pattern": "^([a-f0-9]{64}|PLACEHOLDER_DRY_RUN)$"},
+            "device": {"type": ["string", "null"]}
+          }
+        }
+      }
+    },
+    "state_disks": {
+      "type": "array",
+      "description": "profile=microvm: writable state volumes, each hashed independently of the boot artifact. sha256 is null when the disk was not built (action requires-host/failed) — a disk that was not built is never given a hash.",
+      "items": {
+        "type": "object",
+        "required": ["name", "fs", "size_mb", "uuid", "uuid_source", "path", "action", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "fs": {"type": "string", "enum": ["ffs", "lfs", "hammer2", "hammer1"]},
+          "size_mb": {"type": "integer"},
+          "size_bytes": {"type": "integer"},
+          "label": {"type": ["string", "null"]},
+          "uuid": {
+            "type": "string",
+            "description": "Logical volume identity (declared in the manifest or generated at build time); not a content hash and not an ordering counter."
+          },
+          "uuid_source": {"type": "string", "enum": ["manifest", "genoa-generated"]},
+          "device": {"type": "string"},
+          "mountpoint": {"type": "string"},
+          "journal": {"type": "boolean"},
+          "path": {"type": "string"},
+          "notes": {"type": "string"},
+          "action": {"type": "string", "enum": ["would-run", "ran", "failed", "requires-host"]},
+          "sha256": {"type": ["string", "null"], "pattern": "^([a-f0-9]{64}|PLACEHOLDER_DRY_RUN)$"},
+          "required_host_os": {"type": "array", "items": {"type": "string"}},
+          "missing_tools": {"type": "array", "items": {"type": "string"}},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    "launch": {
+      "type": ["object", "null"],
+      "description": "profile=microvm: local VMM launch plans. genoa never starts the VMM.",
+      "additionalProperties": false,
+      "properties": {
+        "firecracker": {"type": ["object", "null"], "description": "Firecracker --config-file body."},
+        "firecracker_config_path": {"type": ["string", "null"]},
+        "qemu_microvm": {
+          "type": ["array", "null"],
+          "items": {"type": "string"},
+          "description": "argv for qemu-system-* -M microvm (accelerator chosen by the runner)."
+        }
+      }
     }
   }
 }

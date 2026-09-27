@@ -6,3 +6,7 @@ artifacts/*.raw.gz
 artifacts/v0.1.0/
 out/*.raw
 out/*.raw.gz
+out/*.elf
+out/*.img
+out/*.rootfs
+out/*.firecracker.json

@@ -12,3 +12,20 @@ export def find_bin [name: string] {
 
 # find_vultr — convenience wrapper (kept for call-site compatibility)
 export def find_vultr [] { find_bin "vultr" }
+
+# sha256_file — portable SHA-256 of a file as lowercase hex.
+# Prefers native tools (streaming, fine for multi-GB state disks):
+# sha256 -q (FreeBSD), sha256sum (Linux/coreutils), shasum -a 256 (macOS).
+# Falls back to Nushell's builtin hasher (reads the whole file into memory).
+export def sha256_file [path: string] {
+  if (which sha256 | is-not-empty) and ((^uname -s | str trim) == "FreeBSD") {
+    return (^sha256 -q $path | str trim)
+  }
+  if (which sha256sum | is-not-empty) {
+    return (^sha256sum $path | split row " " | first | str trim)
+  }
+  if (which shasum | is-not-empty) {
+    return (^shasum -a 256 $path | split row " " | first | str trim)
+  }
+  open --raw $path | hash sha256
+}
