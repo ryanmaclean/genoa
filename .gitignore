@@ -10,3 +10,7 @@ out/*.elf
 out/*.img
 out/*.rootfs
 out/*.firecracker.json
+
+# misplaced-1024 cleanup
+target/
+/$test_image
